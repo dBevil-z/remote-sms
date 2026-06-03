@@ -35,6 +35,14 @@ Turn an Android phone that stays at home into a self-hosted SMS gateway. The pho
 - **Smartisan 兼容处理**：针对 Smartisan Pro 2S 上普通 `SmsManager` 调用被系统吞掉的问题，提供本地 shell 发送桥方案。
 - **自托管优先**：数据保存在手机本地，适合自己掌控访问入口和部署方式。
 
+### 界面预览
+
+截图中的设备 ID、短信号码和消息列表已脱敏。
+
+![Android App 主界面](docs/assets/android-app-home.png)
+
+![网页状态看板](docs/assets/web-dashboard.png)
+
 ### 项目结构
 
 - `android/`：Android App。负责接收短信、本地存储、内置网页服务、发送短信和设备状态展示。
@@ -176,6 +184,14 @@ Common use cases:
 - **Outgoing message history**: sent messages are recorded locally with sending, sent, delivered, or failed status.
 - **Smartisan compatibility path**: includes a local shell bridge for Smartisan Pro 2S, where normal app-level `SmsManager` calls may be silently blocked.
 - **Self-hosted by design**: SMS data stays on the phone, and you control the access path.
+
+### Screenshots
+
+Device IDs, phone numbers, and message-list details are masked in the screenshots.
+
+![Android app home screen](docs/assets/android-app-home.png)
+
+![Web status dashboard](docs/assets/web-dashboard.png)
 
 ### Repository Layout
 
