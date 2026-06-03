@@ -43,6 +43,12 @@ Turn an Android phone that stays at home into a self-hosted SMS gateway. The pho
 
 ![网页状态看板](docs/assets/web-dashboard.png)
 
+![网页短信列表](docs/assets/web-sms-list.png)
+
+![网页发送短信](docs/assets/web-send-sms.png)
+
+![网页访问设置](docs/assets/web-access-settings.png)
+
 ### 项目结构
 
 - `android/`：Android App。负责接收短信、本地存储、内置网页服务、发送短信和设备状态展示。
@@ -192,6 +198,12 @@ Device IDs, phone numbers, and message-list details are masked in the screenshot
 ![Android app home screen](docs/assets/android-app-home.png)
 
 ![Web status dashboard](docs/assets/web-dashboard.png)
+
+![Web SMS list](docs/assets/web-sms-list.png)
+
+![Web send SMS dialog](docs/assets/web-send-sms.png)
+
+![Web access settings dialog](docs/assets/web-access-settings.png)
 
 ### Repository Layout
 
