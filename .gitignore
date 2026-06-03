@@ -1,0 +1,12 @@
+.tools/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+server/data/
+*.log
+*.apk
+*.jar
+*.zip
+*.tar.gz
+local.properties

@@ -1,0 +1,17 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "dev.dbevil.remotesms"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "dev.dbevil.remotesms"
+        minSdk 23
+        targetSdk 27
+        versionCode 1
+        versionName "0.1.0"
+    }
+}
+
