@@ -26,6 +26,10 @@ Useful when you want to:
 | Remote SMS inbox and sender | Read incoming messages and submit outgoing messages from the web UI. |
 | Multi-SIM support | Select a specific SIM card when sending SMS. |
 | Device dashboard | View battery, memory, storage, network, uptime, SMS count, SIM information, and send-bridge status. |
+| Search and filters | Search by number, note, message body, send status, direction, SIM card, or verification-code-only view. |
+| Verification-code helper | Automatically highlights likely verification codes and provides one-tap copy. |
+| Notes and exports | Add local notes for frequent numbers, and export filtered messages as CSV or JSON. |
+| Health alerts | Shows low battery, high storage usage, network loss, memory pressure, and send-bridge issues. |
 | Mobile-friendly UI | Compact layout works well from another phone. |
 | Password-protected access | Protected APIs require a Bearer Token, configurable from the app or web settings. |
 | No hardcoded tunnel secrets | frp URL, server address, ports, auth token, and web password are configured at runtime. |

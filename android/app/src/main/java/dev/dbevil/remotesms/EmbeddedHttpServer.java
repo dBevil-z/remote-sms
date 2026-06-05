@@ -93,9 +93,13 @@ final class EmbeddedHttpServer {
                 Map<String, String> params = query(target);
                 int limit = params.containsKey("limit") ? parseInt(params.get("limit"), 10) : 10;
                 int offset = params.containsKey("offset") ? parseInt(params.get("offset"), 0) : 0;
+                String search = params.get("q");
+                String direction = params.get("direction");
+                String sim = params.get("sim");
+                boolean codeOnly = "1".equals(params.get("codeOnly"));
                 JSONObject response = new JSONObject();
-                response.put("messages", LocalMessageStore.list(context, offset, limit));
-                response.put("total", LocalMessageStore.count(context));
+                response.put("messages", LocalMessageStore.list(context, offset, limit, search, direction, sim, codeOnly));
+                response.put("total", LocalMessageStore.count(context, search, direction, sim, codeOnly));
                 response.put("offset", Math.max(offset, 0));
                 response.put("limit", Math.max(limit, 1));
                 send(writer, 200, "application/json; charset=utf-8", response.toString());
@@ -182,7 +186,7 @@ final class EmbeddedHttpServer {
                 return;
             }
 
-            send(writer, 200, "text/html; charset=utf-8", html());
+            send(writer, 200, "text/html; charset=utf-8", html(context));
         } catch (Exception error) {
             Log.w(TAG, "web request failed", error);
         }
@@ -276,6 +280,20 @@ final class EmbeddedHttpServer {
         if (status == 400) return "Bad Request";
         if (status == 401) return "Unauthorized";
         return "Error";
+    }
+
+    private static String html(Context context) {
+        try (InputStream input = context.getAssets().open("index.html");
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            return output.toString("UTF-8");
+        } catch (Exception ignored) {
+            return html();
+        }
     }
 
     private static String html() {

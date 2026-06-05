@@ -85,9 +85,14 @@ final class LocalMessageStore {
     }
 
     static synchronized JSONArray list(Context context, int offset, int limit) {
+        return list(context, offset, limit, "", "all", "all", false);
+    }
+
+    static synchronized JSONArray list(Context context, int offset, int limit, String query,
+                                       String direction, String simSlot, boolean codeOnly) {
         JSONArray array = new JSONArray();
         try {
-            List<JSONObject> messages = normalizedObjects(context);
+            List<JSONObject> messages = filter(normalizedObjects(context), query, direction, simSlot, codeOnly);
             int start = Math.max(offset, 0);
             int count = Math.min(Math.max(limit, 1), MAX_MESSAGES);
             int end = Math.min(start + count, messages.size());
@@ -100,11 +105,57 @@ final class LocalMessageStore {
     }
 
     static synchronized int count(Context context) {
+        return count(context, "", "all", "all", false);
+    }
+
+    static synchronized int count(Context context, String query, String direction, String simSlot, boolean codeOnly) {
         try {
-            return normalizedObjects(context).size();
+            return filter(normalizedObjects(context), query, direction, simSlot, codeOnly).size();
         } catch (Exception ignored) {
             return 0;
         }
+    }
+
+    private static List<JSONObject> filter(List<JSONObject> messages, String query,
+                                           String direction, String simSlot, boolean codeOnly) {
+        String q = query == null ? "" : query.trim().toLowerCase();
+        String dir = direction == null ? "all" : direction.trim();
+        String sim = simSlot == null ? "all" : simSlot.trim();
+        List<JSONObject> filtered = new ArrayList<>();
+        for (JSONObject message : messages) {
+            if (!"all".equals(dir) && !dir.equals(message.optString("direction"))) continue;
+            if (!"all".equals(sim)) {
+                String current = message.isNull("simSlot") ? "" : String.valueOf(message.optInt("simSlot"));
+                if (!sim.equals(current)) continue;
+            }
+            if (codeOnly && verificationCode(message.optString("body")).isEmpty()) continue;
+            if (!q.isEmpty()) {
+                String haystack = (message.optString("sender") + " "
+                        + message.optString("recipient") + " "
+                        + message.optString("body") + " "
+                        + message.optString("statusText")).toLowerCase();
+                if (!haystack.contains(q)) continue;
+            }
+            try {
+                JSONObject copy = new JSONObject(message.toString());
+                String code = verificationCode(copy.optString("body"));
+                if (!code.isEmpty()) copy.put("code", code);
+                filtered.add(copy);
+            } catch (Exception ignored) {
+                filtered.add(message);
+            }
+        }
+        return filtered;
+    }
+
+    private static String verificationCode(String body) {
+        if (body == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?:验证码|校验码|动态码|一次性|code|otp|verification)[^0-9]{0,16}(\\d{4,8})",
+                        java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(body);
+        if (matcher.find()) return matcher.group(1);
+        return "";
     }
 
     private static List<JSONObject> normalizedObjects(Context context) throws Exception {
