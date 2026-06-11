@@ -119,9 +119,11 @@ final class EmbeddedHttpServer {
                 String direction = params.get("direction");
                 String sim = params.get("sim");
                 boolean codeOnly = "1".equals(params.get("codeOnly"));
+                long startAt = parseLong(params.get("startAt"), 0);
+                long endAt = parseLong(params.get("endAt"), 0);
                 JSONObject response = new JSONObject();
-                response.put("messages", LocalMessageStore.list(context, offset, limit, search, direction, sim, codeOnly));
-                response.put("total", LocalMessageStore.count(context, search, direction, sim, codeOnly));
+                response.put("messages", LocalMessageStore.list(context, offset, limit, search, direction, sim, codeOnly, startAt, endAt));
+                response.put("total", LocalMessageStore.count(context, search, direction, sim, codeOnly, startAt, endAt));
                 response.put("offset", Math.max(offset, 0));
                 response.put("limit", Math.max(limit, 1));
                 send(writer, 200, "application/json; charset=utf-8", response.toString());
@@ -153,9 +155,7 @@ final class EmbeddedHttpServer {
                     send(writer, 401, "application/json; charset=utf-8", "{\"error\":\"未授权\"}");
                     return;
                 }
-                JSONObject response = new JSONObject();
-                response.put("logs", AppLog.recent(context));
-                send(writer, 200, "application/json; charset=utf-8", response.toString());
+                send(writer, 200, "application/json; charset=utf-8", AppLog.snapshot(context).toString());
                 return;
             }
 
@@ -274,6 +274,14 @@ final class EmbeddedHttpServer {
     private static int parseInt(String value, int fallback) {
         try {
             return Integer.parseInt(value);
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static long parseLong(String value, long fallback) {
+        try {
+            return Long.parseLong(value);
         } catch (Exception ignored) {
             return fallback;
         }

@@ -177,37 +177,57 @@ public class MainActivity extends Activity {
 
     private void showConfigDialog() {
         Config.FrpConfig frp = Config.frpConfig(this);
-        LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(4), 0, dp(4), 0);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(4), dp(2), dp(4), dp(2));
 
-        EditText token = field("网页访问密码", Config.token(this), true);
-        EditText publicUrl = field("公网访问地址，例如 http://example.com:65439", frp.publicUrl, false);
-        EditText serverAddr = field("frp 服务器地址", frp.serverAddr, false);
-        EditText serverPort = field("frp 服务器端口", frp.serverPort, false);
+        TextView title = new TextView(this);
+        title.setText("访问设置");
+        title.setTextSize(22);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.rgb(28, 42, 45));
+        content.addView(title, matchWrap(0, 0, 0, 4));
+
+        TextView intro = new TextView(this);
+        intro.setText("配置远程网页密码和公网入口。所有信息只保存在这台手机本机。");
+        intro.setTextSize(13);
+        intro.setTextColor(Color.rgb(91, 106, 110));
+        intro.setLineSpacing(dp(2), 1.0f);
+        content.addView(intro, matchWrap(0, 0, 0, 14));
+
+        EditText token = settingInput("请输入访问密码", Config.token(this), true);
+        EditText publicUrl = settingInput("http://example.com:65439", frp.publicUrl, false);
+        EditText serverAddr = settingInput("frp 服务器地址，可留空", frp.serverAddr, false);
+        EditText serverPort = settingInput("frps 端口", frp.serverPort, false);
         serverPort.setInputType(InputType.TYPE_CLASS_NUMBER);
-        EditText remotePort = field("frp 远端端口", frp.remotePort, false);
+        EditText remotePort = settingInput("映射到 8787 的公网端口", frp.remotePort, false);
         remotePort.setInputType(InputType.TYPE_CLASS_NUMBER);
-        EditText authToken = field("frp 认证 token", frp.authToken, true);
+        EditText authToken = settingInput("frp 认证 token，可留空", frp.authToken, true);
 
-        form.addView(label("网页鉴权"));
-        form.addView(token, matchWrap(0, 0, 0, 10));
-        form.addView(label("frp 配置"));
-        form.addView(publicUrl, matchWrap(0, 0, 0, 8));
-        form.addView(serverAddr, matchWrap(0, 0, 0, 8));
-        form.addView(serverPort, matchWrap(0, 0, 0, 8));
-        form.addView(remotePort, matchWrap(0, 0, 0, 8));
-        form.addView(authToken, matchWrap(0, 0, 0, 0));
+        LinearLayout authCard = settingCard("网页鉴权", "控制远程页面和 API 的访问");
+        authCard.addView(settingItem("访问密码", "浏览器访问短信页面时使用，至少 8 位。", token), matchWrap(0, 0, 0, 0));
+        content.addView(authCard, matchWrap(0, 0, 0, 10));
+
+        LinearLayout frpCard = settingCard("frp 穿透", "保存公网入口和 frp 连接信息，便于状态展示和排查");
+        frpCard.addView(settingItem("公网入口", "浏览器实际访问的地址，用于远程状态检测。", publicUrl), matchWrap(0, 0, 0, 10));
+        frpCard.addView(settingItem("frp 服务器", "仅用于记录和排查，可留空。", serverAddr), matchWrap(0, 0, 0, 10));
+        frpCard.addView(settingItem("frp 服务端口", "frps 服务端口。", serverPort), matchWrap(0, 0, 0, 10));
+        frpCard.addView(settingItem("frp 远端端口", "映射到手机本机 8787 的公网端口。", remotePort), matchWrap(0, 0, 0, 10));
+        frpCard.addView(settingItem("frp 认证 token", "如 frp 服务需要认证可填写。", authToken), matchWrap(0, 0, 0, 0));
+        content.addView(frpCard, matchWrap(0, 0, 0, 0));
 
         ScrollView scroll = new ScrollView(this);
-        scroll.addView(form);
+        scroll.addView(content);
 
-        new AlertDialog.Builder(this)
-                .setTitle("访问设置")
-                .setMessage("这些信息只保存在手机本机，不写入仓库。")
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setView(scroll)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("保存", (dialog, which) -> {
+                .setPositiveButton("保存", null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(23, 107, 135));
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(91, 106, 110));
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                     String value = token.getText().toString().trim();
                     if (value.length() < 8) {
                         Toast.makeText(this, "密码至少需要 8 位", Toast.LENGTH_SHORT).show();
@@ -225,8 +245,10 @@ public class MainActivity extends Activity {
                     SmsSyncService.start(this);
                     updateStatus();
                     Toast.makeText(this, "访问和 frp 配置已保存", Toast.LENGTH_SHORT).show();
-                })
-                .show();
+                    dialog.dismiss();
+                });
+        });
+        dialog.show();
     }
 
     private TextView label(String text) {
@@ -246,6 +268,64 @@ public class MainActivity extends Activity {
         input.setInputType(InputType.TYPE_CLASS_TEXT | (password ? InputType.TYPE_TEXT_VARIATION_PASSWORD : 0));
         input.setPadding(dp(12), dp(8), dp(12), dp(8));
         return input;
+    }
+
+    private LinearLayout settingCard(String title, String subtitle) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        card.setBackground(cardBackground());
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextSize(16);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleView.setTextColor(Color.rgb(28, 42, 45));
+        card.addView(titleView, matchWrap(0, 0, 0, 2));
+
+        TextView subtitleView = new TextView(this);
+        subtitleView.setText(subtitle);
+        subtitleView.setTextSize(12);
+        subtitleView.setTextColor(Color.rgb(91, 106, 110));
+        card.addView(subtitleView, matchWrap(0, 0, 0, 10));
+        return card;
+    }
+
+    private EditText settingInput(String hint, String value, boolean password) {
+        EditText input = field(hint, value, password);
+        input.setTextSize(14);
+        input.setBackground(inputBackground());
+        return input;
+    }
+
+    private LinearLayout settingItem(String title, String helper, EditText input) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextSize(13);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleView.setTextColor(Color.rgb(35, 48, 51));
+        item.addView(titleView, matchWrap(0, 0, 0, 3));
+
+        TextView helperView = new TextView(this);
+        helperView.setText(helper);
+        helperView.setTextSize(12);
+        helperView.setTextColor(Color.rgb(91, 106, 110));
+        helperView.setLineSpacing(dp(1), 1.0f);
+        item.addView(helperView, matchWrap(0, 0, 0, 6));
+
+        item.addView(input, matchWrap(0, 0, 0, 0));
+        return item;
+    }
+
+    private GradientDrawable inputBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.argb(235, 255, 255, 255));
+        drawable.setCornerRadius(dp(12));
+        drawable.setStroke(dp(1), Color.argb(170, 208, 216, 217));
+        return drawable;
     }
 
     private void requestSmsPermissions() {

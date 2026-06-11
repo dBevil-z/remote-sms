@@ -43,7 +43,11 @@
       .top { background: rgba(22, 31, 35, .72); }
     }
     * { box-sizing: border-box; }
+    html { width: 100%; max-width: 100%; overflow-x: hidden; }
     body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       min-height: 100vh;
       margin: 0;
       color: var(--text);
@@ -68,6 +72,8 @@
     button:disabled { opacity: .48; cursor: not-allowed; }
     input, select, textarea {
       width: 100%;
+      min-width: 0;
+      max-width: 100%;
       min-height: 42px;
       border: 1px solid var(--line);
       border-radius: 14px;
@@ -76,8 +82,9 @@
       padding: 0 12px;
       outline: none;
     }
+    input[type="date"] { -webkit-appearance: none; appearance: none; }
     textarea { min-height: 120px; padding: 10px 12px; resize: vertical; }
-    .shell { position: relative; max-width: 1040px; margin: 0 auto; padding: 18px; }
+    .shell { position: relative; width: 100%; max-width: 1040px; margin: 0 auto; padding: 18px; overflow-x: hidden; }
     .top {
       position: sticky;
       top: 0;
@@ -140,6 +147,8 @@
     .pill.ok { background: rgba(28,154,101,.14); color: var(--ok); }
     .dashboard { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
     .metric, .tools, .quick, .message {
+      max-width: 100%;
+      min-width: 0;
       border: 1px solid var(--line);
       border-radius: 18px;
       background: var(--surface);
@@ -172,7 +181,29 @@
     }
     .chip b { margin-right: 4px; color: var(--muted); font-weight: 600; }
     .tools { padding: 12px; margin-bottom: 12px; }
-    .toolGrid { display: grid; grid-template-columns: minmax(160px, 1.7fr) repeat(3, minmax(105px, .8fr)); gap: 8px; }
+    .toolGrid { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(2, minmax(130px, .7fr)); gap: 8px; }
+    .toolGrid > *, .logGrid > * { min-width: 0; }
+    .filterPanel { display: grid; gap: 10px; margin-top: 10px; }
+    .filterRow { display: grid; grid-template-columns: 72px 1fr; gap: 8px; align-items: center; }
+    .filterRow > b { color: var(--muted); font-size: 12px; }
+    .segmented { display: flex; flex-wrap: wrap; gap: 6px; }
+    .segmented label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.36);
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+      overflow: hidden;
+    }
+    .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+    .segmented span { display: inline-flex; align-items: center; min-height: 30px; padding: 0 11px; }
+    .segmented input:checked + span { background: var(--accent); color: #fff; }
+    .dateQuick { display: flex; flex-wrap: wrap; gap: 6px; }
     .toolActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
     .check { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.4); }
     .check input { width: auto; min-height: auto; }
@@ -201,7 +232,33 @@
     .field label { display: block; margin: 0 0 6px; color: var(--muted); font-size: 13px; }
     .phoneRow { display: grid; grid-template-columns: 112px 1fr; gap: 8px; }
     .panel-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-    .logBox { min-height: 260px; max-height: 58vh; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0,0,0,.08); color: var(--text); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .view.hidden { display: none; }
+    .logHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .logHead h2 { margin: 0; font-size: 23px; }
+    .logHead p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+    .logStats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .logStat, .logTools, .logRow {
+      max-width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .logStat { padding: 12px; min-height: 76px; }
+    .logStat b { display: block; color: var(--muted); font-size: 12px; }
+    .logStat strong { display: block; margin-top: 4px; font-size: 22px; line-height: 1.1; }
+    .logTools { padding: 12px; margin-bottom: 12px; }
+    .logGrid { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(2, minmax(130px, .7fr)); gap: 8px; }
+    .logActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .logList { display: grid; gap: 10px; }
+    .logRow { display: grid; grid-template-columns: 154px 96px 1fr; gap: 10px; align-items: flex-start; padding: 12px; }
+    .logTime { color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
+    .logType { justify-self: start; min-height: 24px; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 800; }
+    .logType.warn { background: rgba(213,140,34,.16); color: #9b6417; }
+    .logType.bad { background: rgba(189,52,52,.14); color: var(--bad); }
+    .logDetail { word-break: break-word; white-space: pre-wrap; }
     .toast { position: fixed; left: 50%; bottom: 18px; z-index: 9; transform: translateX(-50%); display: none; max-width: min(420px, calc(100vw - 28px)); padding: 10px 14px; border-radius: 999px; background: rgba(30,44,48,.9); color: #fff; box-shadow: var(--shadow); }
     .toast.show { display: block; }
     @media (max-width: 840px) {
@@ -209,16 +266,33 @@
       .facts { grid-column: span 2; }
       .toolGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .toolGrid .search { grid-column: span 2; }
+      .filterRow { grid-template-columns: 1fr; }
+      .logStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .logGrid { grid-template-columns: 1fr; }
+      .logRow { grid-template-columns: 1fr; gap: 6px; }
     }
     @media (max-width: 640px) {
       .shell { padding: 12px; }
-      .top { margin: -12px -12px 12px; padding: 12px; align-items: flex-start; }
-      .brand { gap: 8px; }
+      .top {
+        flex-direction: column;
+        margin: -12px -12px 12px;
+        padding: 12px;
+        width: auto;
+        max-width: none;
+        align-items: stretch;
+        gap: 10px;
+        background: rgba(26, 42, 48, .92);
+        border-bottom-color: rgba(255,255,255,.16);
+        box-shadow: 0 12px 30px rgba(0,0,0,.18);
+      }
+      .brand { width: 100%; gap: 8px; }
+      .brand > div { min-width: 0; }
       .brandIcon { width: 34px; height: 34px; flex-basis: 34px; border-radius: 9px; }
-      h1 { font-size: 20px; }
-      .sub { font-size: 12px; }
-      .actions { gap: 6px; }
-      .actions button { min-height: 34px; padding: 0 11px; }
+      h1 { font-size: 20px; color: #f4fbfb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .top .sub { color: rgba(244,251,251,.76); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .actions { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+      .actions button { min-height: 34px; padding: 0 6px; background: rgba(255,255,255,.14); color: #f4fbfb; border-color: rgba(255,255,255,.16); }
+      .actions button.primary { background: var(--accent-2); color: #0d2b33; border-color: transparent; font-weight: 800; }
       .status { padding: 12px 13px; border-radius: 15px; }
       .statusMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
       .statusItem { padding: 7px 8px; }
@@ -234,8 +308,16 @@
       .tools, .quick, .message { border-radius: 14px; }
       .toolGrid { grid-template-columns: 1fr; }
       .toolGrid .search { grid-column: auto; }
+      input[type="date"] { font-size: 13px; padding: 0 10px; }
+      .segmented label { min-height: 30px; font-size: 12px; }
+      .segmented span { min-height: 28px; padding: 0 9px; }
       .quick { align-items: flex-start; flex-direction: column; }
       .phoneRow { grid-template-columns: 1fr; }
+      .logHead { flex-direction: column; }
+      .logStats { gap: 8px; }
+      .logStat { min-height: 64px; padding: 10px; border-radius: 14px; }
+      .logStat strong { font-size: 19px; }
+      .logRow, .logTools { border-radius: 14px; }
     }
   </style>
 </head>
@@ -249,6 +331,7 @@
       <div class="actions"><button id="sendOpen">发短信</button><button id="logsOpen">日志</button><button id="settings">设置</button><button class="primary" id="refresh">刷新</button></div>
     </header>
 
+    <main class="view" id="mainView">
     <section class="status" id="statusBox">
       <div>
         <strong id="status">未连接</strong>
@@ -267,9 +350,26 @@
     <section class="tools">
       <div class="toolGrid">
         <input class="search" id="search" type="search" placeholder="搜索号码、备注、正文、发送状态">
-        <select id="directionFilter"><option value="all">全部短信</option><option value="incoming">只看收到</option><option value="outgoing">只看发出</option></select>
-        <select id="simFilter"><option value="all">全部 SIM</option></select>
-        <label class="check"><input id="codeOnly" type="checkbox"> 只看验证码</label>
+        <input id="smsStartDate" type="date" aria-label="开始日期">
+        <input id="smsEndDate" type="date" aria-label="结束日期">
+      </div>
+      <div class="filterPanel">
+        <div class="filterRow"><b>类型</b><div class="segmented" id="directionFilter">
+          <label><input type="radio" name="directionFilter" value="all" checked><span>全部短信</span></label>
+          <label><input type="radio" name="directionFilter" value="incoming"><span>收到</span></label>
+          <label><input type="radio" name="directionFilter" value="outgoing"><span>发出</span></label>
+        </div></div>
+        <div class="filterRow"><b>SIM</b><div class="segmented" id="simFilter"></div></div>
+        <div class="filterRow"><b>内容</b><div class="segmented" id="codeFilter">
+          <label><input type="radio" name="codeFilter" value="all" checked><span>全部内容</span></label>
+          <label><input type="radio" name="codeFilter" value="code"><span>验证码</span></label>
+        </div></div>
+        <div class="filterRow"><b>日期</b><div class="dateQuick">
+          <button class="ghost" data-sms-range="today">今天</button>
+          <button class="ghost" data-sms-range="7">近 7 天</button>
+          <button class="ghost" data-sms-range="30">近 30 天</button>
+          <button class="ghost" data-sms-range="all">全部</button>
+        </div></div>
       </div>
       <div class="toolActions">
         <button class="ghost" id="exportCsv">导出 CSV</button>
@@ -280,6 +380,48 @@
     <section class="quick" id="quickCode"></section>
     <section class="list" id="messages"></section>
     <div class="pager"><button id="prevPage">上一页</button><span id="pageInfo">第 1 页</span><button id="nextPage">下一页</button></div>
+    </main>
+
+    <section class="view hidden" id="logsView">
+      <div class="logHead">
+        <div><h2>运行日志</h2><p id="logSummary">查看服务、frp、发送桥和短信接收状态</p></div>
+        <button id="logsBack">返回短信</button>
+      </div>
+      <div class="logStats">
+        <div class="logStat"><b>日志总数</b><strong id="logTotal">0</strong></div>
+        <div class="logStat"><b>异常/失败</b><strong id="logIssues">0</strong></div>
+        <div class="logStat"><b>frp 相关</b><strong id="logFrp">0</strong></div>
+        <div class="logStat"><b>最近更新</b><strong id="logUpdated">未读取</strong></div>
+      </div>
+      <section class="logTools">
+        <div class="logGrid">
+          <input id="logSearch" type="search" placeholder="搜索日志内容、时间、类型">
+          <input id="logStartDate" type="date" aria-label="日志开始日期">
+          <input id="logEndDate" type="date" aria-label="日志结束日期">
+        </div>
+        <div class="filterPanel">
+          <div class="filterRow"><b>类型</b><div class="segmented" id="logTypeFilter"></div></div>
+          <div class="filterRow"><b>状态</b><div class="segmented" id="logIssueFilter">
+            <label><input type="radio" name="logIssueFilter" value="all" checked><span>全部日志</span></label>
+            <label><input type="radio" name="logIssueFilter" value="issue"><span>异常/失败</span></label>
+            <label><input type="radio" name="logIssueFilter" value="normal"><span>正常日志</span></label>
+          </div></div>
+          <div class="filterRow"><b>日期</b><div class="dateQuick">
+            <button class="ghost" data-log-range="today">今天</button>
+            <button class="ghost" data-log-range="7">近 7 天</button>
+            <button class="ghost" data-log-range="30">近 30 天</button>
+            <button class="ghost" data-log-range="all">全部</button>
+          </div></div>
+        </div>
+        <div class="logActions">
+          <button class="primary" id="logsRefresh">刷新日志</button>
+          <button class="ghost" id="logsCopy">复制当前结果</button>
+          <button class="ghost" id="logsCopyRaw">复制原始日志</button>
+          <button class="ghost" id="logsClearFilters">清空筛选</button>
+        </div>
+      </section>
+      <section class="logList" id="logsList"></section>
+    </section>
   </div>
 
   <div class="modal" id="modal"><div class="panel">
@@ -303,11 +445,6 @@
     <div class="panel-actions"><button id="remarkCancel">取消</button><button class="primary" id="remarkSave">保存备注</button></div>
   </div></div>
 
-  <div class="modal" id="logsModal"><div class="panel">
-    <h2>运行日志</h2><p>显示最近的服务、网络、发送桥和发送记录日志。</p>
-    <pre class="logBox" id="logsText">正在读取...</pre>
-    <div class="panel-actions"><button id="logsClose">关闭</button><button id="logsCopy">复制</button><button class="primary" id="logsRefresh">刷新</button></div>
-  </div></div>
   <div class="toast" id="toast"></div>
 
   <script>
@@ -315,16 +452,21 @@
       token: document.querySelector("#token"), newToken: document.querySelector("#newToken"),
       status: document.querySelector("#status"), hint: document.querySelector("#hint"), statusBox: document.querySelector("#statusBox"),
       alerts: document.querySelector("#alerts"), list: document.querySelector("#messages"), board: document.querySelector("#deviceBoard"),
-      modal: document.querySelector("#modal"), sendModal: document.querySelector("#sendModal"), remarkModal: document.querySelector("#remarkModal"), logsModal: document.querySelector("#logsModal"),
+      mainView: document.querySelector("#mainView"), logsView: document.querySelector("#logsView"),
+      modal: document.querySelector("#modal"), sendModal: document.querySelector("#sendModal"), remarkModal: document.querySelector("#remarkModal"),
       simSelect: document.querySelector("#simSelect"), simFilter: document.querySelector("#simFilter"), countryCode: document.querySelector("#countryCode"), localNumber: document.querySelector("#localNumber"),
       smsBody: document.querySelector("#smsBody"), pageInfo: document.querySelector("#pageInfo"), prev: document.querySelector("#prevPage"),
       next: document.querySelector("#nextPage"), search: document.querySelector("#search"), direction: document.querySelector("#directionFilter"),
-      codeOnly: document.querySelector("#codeOnly"), quick: document.querySelector("#quickCode"), toast: document.querySelector("#toast"),
-      remarkTarget: document.querySelector("#remarkTarget"), remarkName: document.querySelector("#remarkName"), logsText: document.querySelector("#logsText"),
+      codeFilter: document.querySelector("#codeFilter"), smsStartDate: document.querySelector("#smsStartDate"), smsEndDate: document.querySelector("#smsEndDate"),
+      quick: document.querySelector("#quickCode"), toast: document.querySelector("#toast"),
+      remarkTarget: document.querySelector("#remarkTarget"), remarkName: document.querySelector("#remarkName"),
+      logsList: document.querySelector("#logsList"), logSearch: document.querySelector("#logSearch"), logTypeFilter: document.querySelector("#logTypeFilter"),
+      logIssueFilter: document.querySelector("#logIssueFilter"), logStartDate: document.querySelector("#logStartDate"), logEndDate: document.querySelector("#logEndDate"), logSummary: document.querySelector("#logSummary"),
+      logTotal: document.querySelector("#logTotal"), logIssues: document.querySelector("#logIssues"), logFrp: document.querySelector("#logFrp"), logUpdated: document.querySelector("#logUpdated"),
       nowText: document.querySelector("#nowText"), pageUpdateText: document.querySelector("#pageUpdateText"),
       deviceUpdateText: document.querySelector("#deviceUpdateText"), latestMessageText: document.querySelector("#latestMessageText")
     };
-    const state = { messages: [], sims: [], offset: 0, total: 0, pageSize: 10, remarkNumber: "", lastPageUpdateAt: 0, lastDeviceSampleAt: 0 };
+    const state = { messages: [], sims: [], logs: [], rawLogs: "", logTypes: [], offset: 0, total: 0, pageSize: 10, remarkNumber: "", lastPageUpdateAt: 0, lastDeviceSampleAt: 0 };
     const urlToken = new URLSearchParams(location.search).get("token");
     if (urlToken) localStorage.setItem("smsToken", urlToken);
     els.token.value = localStorage.getItem("smsToken") || "";
@@ -385,6 +527,29 @@
     function uptime(ms) { let s = Math.floor(Number(ms || 0) / 1000), d = Math.floor(s / 86400); s %= 86400; let h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return (d ? d + "天 " : "") + h + "时" + m + "分"; }
     function timeText(value) { const n = Number(value || 0); return n > 0 ? new Date(n).toLocaleString() : "未读取"; }
     function shortTime(value) { const n = Number(value || 0); return n > 0 ? new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "未更新"; }
+    function selectedRadio(name, fallback) { const checked = document.querySelector('input[name="' + name + '"]:checked'); return checked ? checked.value : fallback; }
+    function dateStart(value) { if (!value) return 0; const d = new Date(value + "T00:00:00"); return Number.isNaN(d.getTime()) ? 0 : d.getTime(); }
+    function dateEnd(value) { if (!value) return 0; const d = new Date(value + "T23:59:59.999"); return Number.isNaN(d.getTime()) ? 0 : d.getTime(); }
+    function dateKey(value) {
+      const n = Number(value || 0);
+      if (!n) return "";
+      const d = new Date(n);
+      const m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+      return d.getFullYear() + "-" + m + "-" + day;
+    }
+    function setDateRange(startInput, endInput, range) {
+      if (range === "all") { startInput.value = ""; endInput.value = ""; return; }
+      const end = new Date();
+      const start = new Date();
+      if (range === "today") {
+        start.setHours(0, 0, 0, 0);
+      } else {
+        start.setDate(start.getDate() - Math.max(Number(range) - 1, 0));
+        start.setHours(0, 0, 0, 0);
+      }
+      startInput.value = dateKey(start.getTime());
+      endInput.value = dateKey(end.getTime());
+    }
     function fillClass(p, mode) { if (mode === "battery") return p <= 20 ? "bad" : (p <= 40 ? "warn" : ""); return p >= 90 ? "bad" : (p >= 75 ? "warn" : ""); }
     function codeOf(m) {
       if (m.code) return m.code;
@@ -456,12 +621,26 @@
 
     function renderSims() {
       els.simSelect.innerHTML = state.sims.length ? state.sims.map(s => '<option value="' + s.subscriptionId + '">卡槽 ' + (s.slotIndex + 1) + ' · ' + esc(s.displayName || s.carrierName || "SIM") + (s.isDefault ? " · 默认" : "") + "</option>").join("") : '<option value="-1">默认短信 SIM</option>';
-      els.simFilter.innerHTML = '<option value="all">全部 SIM</option>' + state.sims.map(s => '<option value="' + s.slotIndex + '">卡槽 ' + (s.slotIndex + 1) + ' · ' + esc(s.displayName || s.carrierName || "SIM") + "</option>").join("");
+      const selected = selectedRadio("simFilter", "all");
+      els.simFilter.innerHTML = '<label><input type="radio" name="simFilter" value="all"' + (selected === "all" ? " checked" : "") + '><span>全部 SIM</span></label>' +
+        state.sims.map(s => {
+          const value = String(s.slotIndex);
+          return '<label><input type="radio" name="simFilter" value="' + value + '"' + (selected === value ? " checked" : "") + '><span>卡槽 ' + (s.slotIndex + 1) + ' · ' + esc(s.displayName || s.carrierName || "SIM") + '</span></label>';
+        }).join("");
     }
     function renderPager() { const page = Math.floor(state.offset / state.pageSize) + 1, pages = Math.max(Math.ceil(state.total / state.pageSize), 1); els.pageInfo.textContent = "第 " + page + " / " + pages + " 页 · 共 " + state.total + " 条"; els.prev.disabled = state.offset <= 0; els.next.disabled = state.offset + state.pageSize >= state.total; }
     function queryString(limit, offset) {
-      const p = new URLSearchParams({ limit: String(limit), offset: String(offset), q: els.search.value.trim(), direction: els.direction.value, sim: els.simFilter.value });
-      if (els.codeOnly.checked) p.set("codeOnly", "1");
+      const p = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+        q: els.search.value.trim(),
+        direction: selectedRadio("directionFilter", "all"),
+        sim: selectedRadio("simFilter", "all")
+      });
+      const startAt = dateStart(els.smsStartDate.value), endAt = dateEnd(els.smsEndDate.value);
+      if (selectedRadio("codeFilter", "all") === "code") p.set("codeOnly", "1");
+      if (startAt) p.set("startAt", String(startAt));
+      if (endAt) p.set("endAt", String(endAt));
       return p.toString();
     }
     async function loadDevice() { const r = await apiFetch("/api/device", { headers: headers() }, 3); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取设备状态失败 HTTP " + r.status); renderDevice(await r.json()); }
@@ -503,21 +682,81 @@
       setTimeout(() => els.localNumber.focus(), 30);
     }
     function debounce(fn, ms) { let id; return () => { clearTimeout(id); id = setTimeout(fn, ms); }; }
+    function showMainView() { els.logsView.classList.add("hidden"); els.mainView.classList.remove("hidden"); }
+    function showLogsView() { els.mainView.classList.add("hidden"); els.logsView.classList.remove("hidden"); loadLogs(); }
     function handleLoadError(e) {
       els.status.textContent = "连接中断";
       els.hint.textContent = "网络或 frp 可能抖动，稍后自动重试：" + e.message;
       els.statusBox.classList.remove("ok");
       toast(e.message);
     }
+    function isIssueLog(entry) {
+      const text = (entry.type + " " + entry.detail + " " + entry.line).toLowerCase();
+      return /失败|异常|不可用|未启动|停止|error|fail|exception|timeout|denied|refused|unavailable|bad|warn/.test(text);
+    }
+    function logTypeClass(entry) {
+      if (isIssueLog(entry)) return "bad";
+      if (/watchdog|frp|bridge|send/.test(String(entry.type || ""))) return "warn";
+      return "";
+    }
+    function filteredLogs() {
+      const q = els.logSearch.value.trim().toLowerCase();
+      const type = selectedRadio("logTypeFilter", "all");
+      const issue = selectedRadio("logIssueFilter", "all");
+      const start = els.logStartDate.value;
+      const end = els.logEndDate.value;
+      return state.logs.filter(entry => {
+        const text = (entry.time + " " + entry.type + " " + entry.detail + " " + entry.line).toLowerCase();
+        const matchesText = !q || text.includes(q);
+        const matchesType = type === "all" || entry.type === type;
+        const isIssue = isIssueLog(entry);
+        const matchesIssue = issue === "all" || (issue === "issue" && isIssue) || (issue === "normal" && !isIssue);
+        const day = String(entry.time || "").slice(0, 10);
+        const matchesStart = !start || day >= start;
+        const matchesEnd = !end || day <= end;
+        return matchesText && matchesType && matchesIssue && matchesStart && matchesEnd;
+      }).slice().reverse();
+    }
+    function renderLogTypes() {
+      const selected = selectedRadio("logTypeFilter", "all");
+      els.logTypeFilter.innerHTML = '<label><input type="radio" name="logTypeFilter" value="all"' + (selected === "all" ? " checked" : "") + '><span>全部类型</span></label>' +
+        state.logTypes.map(type => '<label><input type="radio" name="logTypeFilter" value="' + esc(type) + '"' + (selected === type ? " checked" : "") + '><span>' + esc(type) + '</span></label>').join("");
+    }
+    function renderLogStats(sampledAt) {
+      const issues = state.logs.filter(isIssueLog).length;
+      const frp = state.logs.filter(entry => entry.type === "frp" || String(entry.detail || "").toLowerCase().includes("frp")).length;
+      els.logTotal.textContent = String(state.logs.length);
+      els.logIssues.textContent = String(issues);
+      els.logFrp.textContent = String(frp);
+      els.logUpdated.textContent = sampledAt ? shortTime(sampledAt) : "未读取";
+    }
+    function renderLogs() {
+      const logs = filteredLogs();
+      els.logSummary.textContent = "当前显示 " + logs.length + " 条 · 原始日志 " + state.logs.length + " 条";
+      if (!logs.length) {
+        els.logsList.innerHTML = '<article class="logRow"><div class="logDetail">没有匹配的日志</div></article>';
+        return;
+      }
+      els.logsList.innerHTML = logs.map(entry => '<article class="logRow">' +
+        '<div class="logTime">' + esc(entry.time || "未知时间") + '</div>' +
+        '<div class="logType ' + logTypeClass(entry) + '">' + esc(entry.type || "event") + '</div>' +
+        '<div class="logDetail">' + esc(entry.detail || entry.line || "") + '</div>' +
+        '</article>').join("");
+    }
     async function loadLogs() {
-      els.logsText.textContent = "正在读取...";
+      els.logsList.innerHTML = '<article class="logRow"><div class="logDetail">正在读取日志...</div></article>';
       try {
         const r = await apiFetch("/api/logs", { headers: headers() }, 3);
         if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "HTTP " + r.status);
         const d = await r.json();
-        els.logsText.textContent = d.logs || "暂无日志";
+        state.logs = d.entries || [];
+        state.rawLogs = d.logs || "";
+        state.logTypes = d.types || [];
+        renderLogTypes();
+        renderLogStats(d.sampledAt);
+        renderLogs();
       } catch (e) {
-        els.logsText.textContent = "读取日志失败：" + e.message;
+        els.logsList.innerHTML = '<article class="logRow"><div class="logDetail">读取日志失败：' + esc(e.message) + '</div></article>';
       }
     }
 
@@ -530,11 +769,26 @@
       if (!r.ok) { els.status.textContent = r.status === 401 ? "当前密码错误，无法修改" : "更新失败 HTTP " + r.status; return; }
       els.token.value = els.newToken.value; localStorage.setItem("smsToken", els.token.value); els.newToken.value = ""; closeModal(els.modal); toast("访问密码已更新"); load().catch(e => toast(e.message));
     };
-    document.querySelector("#logsOpen").onclick = () => { openModal(els.logsModal); loadLogs(); };
-    document.querySelector("#logsClose").onclick = () => closeModal(els.logsModal);
+    document.querySelector("#logsOpen").onclick = showLogsView;
+    document.querySelector("#logsBack").onclick = showMainView;
     document.querySelector("#logsRefresh").onclick = loadLogs;
-    document.querySelector("#logsCopy").onclick = () => copyText(els.logsText.textContent || "");
-    els.logsModal.onclick = e => { if (e.target === els.logsModal) closeModal(els.logsModal); };
+    document.querySelector("#logsCopy").onclick = () => copyText(filteredLogs().map(entry => entry.line || [entry.time, entry.type, entry.detail].join("  ")).join("\n"));
+    document.querySelector("#logsCopyRaw").onclick = () => copyText(state.rawLogs || "");
+    document.querySelector("#logsClearFilters").onclick = () => {
+      els.logSearch.value = ""; els.logStartDate.value = ""; els.logEndDate.value = "";
+      const type = document.querySelector('input[name="logTypeFilter"][value="all"]'); if (type) type.checked = true;
+      const issue = document.querySelector('input[name="logIssueFilter"][value="all"]'); if (issue) issue.checked = true;
+      renderLogs();
+    };
+    const logFilterChanged = debounce(renderLogs, 180);
+    els.logSearch.oninput = logFilterChanged;
+    els.logTypeFilter.onchange = renderLogs;
+    els.logIssueFilter.onchange = renderLogs;
+    els.logStartDate.onchange = renderLogs;
+    els.logEndDate.onchange = renderLogs;
+    document.querySelectorAll("[data-log-range]").forEach(button => {
+      button.onclick = () => { setDateRange(els.logStartDate, els.logEndDate, button.getAttribute("data-log-range")); renderLogs(); };
+    });
     document.querySelector("#sendOpen").onclick = () => openSend();
     document.querySelector("#sendClose").onclick = () => closeModal(els.sendModal);
     els.sendModal.onclick = e => { if (e.target === els.sendModal) closeModal(els.sendModal); };
@@ -557,13 +811,27 @@
     els.prev.onclick = () => { state.offset = Math.max(0, state.offset - state.pageSize); load().catch(handleLoadError); };
     els.next.onclick = () => { if (state.offset + state.pageSize < state.total) { state.offset += state.pageSize; load().catch(handleLoadError); } };
     const filterChanged = debounce(() => { state.offset = 0; load().catch(handleLoadError); }, 260);
-    els.search.oninput = filterChanged; els.direction.onchange = filterChanged; els.simFilter.onchange = filterChanged; els.codeOnly.onchange = filterChanged;
-    document.querySelector("#clearFilters").onclick = () => { els.search.value = ""; els.direction.value = "all"; els.simFilter.value = "all"; els.codeOnly.checked = false; state.offset = 0; load().catch(handleLoadError); };
+    els.search.oninput = filterChanged;
+    els.direction.onchange = filterChanged;
+    els.simFilter.onchange = filterChanged;
+    els.codeFilter.onchange = filterChanged;
+    els.smsStartDate.onchange = filterChanged;
+    els.smsEndDate.onchange = filterChanged;
+    document.querySelectorAll("[data-sms-range]").forEach(button => {
+      button.onclick = () => { setDateRange(els.smsStartDate, els.smsEndDate, button.getAttribute("data-sms-range")); state.offset = 0; load().catch(handleLoadError); };
+    });
+    document.querySelector("#clearFilters").onclick = () => {
+      els.search.value = ""; els.smsStartDate.value = ""; els.smsEndDate.value = "";
+      document.querySelector('input[name="directionFilter"][value="all"]').checked = true;
+      const simAll = document.querySelector('input[name="simFilter"][value="all"]'); if (simAll) simAll.checked = true;
+      document.querySelector('input[name="codeFilter"][value="all"]').checked = true;
+      state.offset = 0; load().catch(handleLoadError);
+    };
     document.querySelector("#exportCsv").onclick = () => exportData("csv");
     document.querySelector("#exportJson").onclick = () => exportData("json");
     loadSims().catch(() => {});
     setInterval(() => {
-      if (!document.hidden && !els.modal.classList.contains("open") && !els.sendModal.classList.contains("open") && !els.remarkModal.classList.contains("open") && !els.logsModal.classList.contains("open")) {
+      if (!document.hidden && !els.mainView.classList.contains("hidden") && !els.modal.classList.contains("open") && !els.sendModal.classList.contains("open") && !els.remarkModal.classList.contains("open")) {
         load().catch(handleLoadError);
       }
     }, 120000);

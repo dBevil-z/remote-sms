@@ -90,9 +90,15 @@ final class LocalMessageStore {
 
     static synchronized JSONArray list(Context context, int offset, int limit, String query,
                                        String direction, String simSlot, boolean codeOnly) {
+        return list(context, offset, limit, query, direction, simSlot, codeOnly, 0, 0);
+    }
+
+    static synchronized JSONArray list(Context context, int offset, int limit, String query,
+                                       String direction, String simSlot, boolean codeOnly,
+                                       long startAt, long endAt) {
         JSONArray array = new JSONArray();
         try {
-            List<JSONObject> messages = filter(normalizedObjects(context), query, direction, simSlot, codeOnly);
+            List<JSONObject> messages = filter(normalizedObjects(context), query, direction, simSlot, codeOnly, startAt, endAt);
             int start = Math.max(offset, 0);
             int count = Math.min(Math.max(limit, 1), MAX_MESSAGES);
             int end = Math.min(start + count, messages.size());
@@ -109,8 +115,13 @@ final class LocalMessageStore {
     }
 
     static synchronized int count(Context context, String query, String direction, String simSlot, boolean codeOnly) {
+        return count(context, query, direction, simSlot, codeOnly, 0, 0);
+    }
+
+    static synchronized int count(Context context, String query, String direction, String simSlot, boolean codeOnly,
+                                  long startAt, long endAt) {
         try {
-            return filter(normalizedObjects(context), query, direction, simSlot, codeOnly).size();
+            return filter(normalizedObjects(context), query, direction, simSlot, codeOnly, startAt, endAt).size();
         } catch (Exception ignored) {
             return 0;
         }
@@ -118,11 +129,20 @@ final class LocalMessageStore {
 
     private static List<JSONObject> filter(List<JSONObject> messages, String query,
                                            String direction, String simSlot, boolean codeOnly) {
+        return filter(messages, query, direction, simSlot, codeOnly, 0, 0);
+    }
+
+    private static List<JSONObject> filter(List<JSONObject> messages, String query,
+                                           String direction, String simSlot, boolean codeOnly,
+                                           long startAt, long endAt) {
         String q = query == null ? "" : query.trim().toLowerCase();
         String dir = direction == null ? "all" : direction.trim();
         String sim = simSlot == null ? "all" : simSlot.trim();
         List<JSONObject> filtered = new ArrayList<>();
         for (JSONObject message : messages) {
+            long receivedAt = message.optLong("receivedAt");
+            if (startAt > 0 && receivedAt < startAt) continue;
+            if (endAt > 0 && receivedAt > endAt) continue;
             if (!"all".equals(dir) && !dir.equals(message.optString("direction"))) continue;
             if (!"all".equals(sim)) {
                 String current = message.isNull("simSlot") ? "" : String.valueOf(message.optInt("simSlot"));
