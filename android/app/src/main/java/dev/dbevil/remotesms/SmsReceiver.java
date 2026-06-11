@@ -45,5 +45,12 @@ public class SmsReceiver extends BroadcastReceiver {
 
         SmsPayload payload = new SmsPayload(sender, body.toString(), receivedAt, simSlot);
         LocalMessageStore.add(context.getApplicationContext(), payload);
+        AppLog.add(context, "sms", "收到短信，触发服务健康检查 sender=" + mask(sender));
+        SmsSyncService.startAfterSms(context.getApplicationContext());
+    }
+
+    private String mask(String value) {
+        if (value == null || value.length() <= 4) return String.valueOf(value);
+        return "***" + value.substring(value.length() - 4);
     }
 }

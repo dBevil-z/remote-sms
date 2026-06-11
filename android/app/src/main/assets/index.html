@@ -112,6 +112,16 @@
     }
     .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 4px rgba(213,140,34,.14); }
     .ok .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(28,154,101,.14); }
+    .statusMeta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+    .statusItem {
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(255,255,255,.28);
+    }
+    .statusItem b { display: block; margin-bottom: 2px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .statusItem span { display: block; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 800; white-space: nowrap; text-overflow: ellipsis; }
     .alertLine { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
     .pill, .tag, .copyCode {
       display: inline-flex;
@@ -210,6 +220,9 @@
       .actions { gap: 6px; }
       .actions button { min-height: 34px; padding: 0 11px; }
       .status { padding: 12px 13px; border-radius: 15px; }
+      .statusMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .statusItem { padding: 7px 8px; }
+      .statusItem span { font-size: 12px; }
       .dashboard { gap: 8px; margin-bottom: 10px; }
       .metric { min-height: 78px; padding: 10px 11px; border-radius: 14px; }
       .metric h3 { margin-bottom: 5px; font-size: 12px; }
@@ -237,7 +250,17 @@
     </header>
 
     <section class="status" id="statusBox">
-      <div><strong id="status">未连接</strong><div class="sub" id="hint">读取短信前需要访问密码</div><div class="alertLine" id="alerts"></div></div>
+      <div>
+        <strong id="status">未连接</strong>
+        <div class="sub" id="hint">读取短信前需要访问密码</div>
+        <div class="statusMeta">
+          <div class="statusItem"><b>当前时间</b><span id="nowText">--</span></div>
+          <div class="statusItem"><b>页面更新</b><span id="pageUpdateText">未更新</span></div>
+          <div class="statusItem"><b>手机采样</b><span id="deviceUpdateText">未读取</span></div>
+          <div class="statusItem"><b>最新短信</b><span id="latestMessageText">未读取</span></div>
+        </div>
+        <div class="alertLine" id="alerts"></div>
+      </div>
       <span class="dot"></span>
     </section>
     <section class="dashboard" id="deviceBoard"></section>
@@ -297,9 +320,11 @@
       smsBody: document.querySelector("#smsBody"), pageInfo: document.querySelector("#pageInfo"), prev: document.querySelector("#prevPage"),
       next: document.querySelector("#nextPage"), search: document.querySelector("#search"), direction: document.querySelector("#directionFilter"),
       codeOnly: document.querySelector("#codeOnly"), quick: document.querySelector("#quickCode"), toast: document.querySelector("#toast"),
-      remarkTarget: document.querySelector("#remarkTarget"), remarkName: document.querySelector("#remarkName"), logsText: document.querySelector("#logsText")
+      remarkTarget: document.querySelector("#remarkTarget"), remarkName: document.querySelector("#remarkName"), logsText: document.querySelector("#logsText"),
+      nowText: document.querySelector("#nowText"), pageUpdateText: document.querySelector("#pageUpdateText"),
+      deviceUpdateText: document.querySelector("#deviceUpdateText"), latestMessageText: document.querySelector("#latestMessageText")
     };
-    const state = { messages: [], sims: [], offset: 0, total: 0, pageSize: 10, remarkNumber: "" };
+    const state = { messages: [], sims: [], offset: 0, total: 0, pageSize: 10, remarkNumber: "", lastPageUpdateAt: 0, lastDeviceSampleAt: 0 };
     const urlToken = new URLSearchParams(location.search).get("token");
     if (urlToken) localStorage.setItem("smsToken", urlToken);
     els.token.value = localStorage.getItem("smsToken") || "";
@@ -358,6 +383,8 @@
     }
     function bytes(v) { if (!v) return "0 B"; const u = ["B","KB","MB","GB","TB"]; let n = Number(v), i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : Math.round(n)) + " " + u[i]; }
     function uptime(ms) { let s = Math.floor(Number(ms || 0) / 1000), d = Math.floor(s / 86400); s %= 86400; let h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return (d ? d + "天 " : "") + h + "时" + m + "分"; }
+    function timeText(value) { const n = Number(value || 0); return n > 0 ? new Date(n).toLocaleString() : "未读取"; }
+    function shortTime(value) { const n = Number(value || 0); return n > 0 ? new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "未更新"; }
     function fillClass(p, mode) { if (mode === "battery") return p <= 20 ? "bad" : (p <= 40 ? "warn" : ""); return p >= 90 ? "bad" : (p >= 75 ? "warn" : ""); }
     function codeOf(m) {
       if (m.code) return m.code;
@@ -369,10 +396,19 @@
     function statusTag(m) { if (m.direction !== "outgoing") return '<span class="tag">收到</span>'; const text = m.statusText || "发送中"; const cls = m.status === "failed" ? " fail" : (m.status === "sending" ? " wait" : ""); return '<span class="tag' + cls + '">' + esc(text) + "</span>"; }
     function metric(title, value, sub, p, mode) { return '<article class="metric"><h3>' + esc(title) + '</h3><strong>' + esc(value) + '</strong><small title="' + esc(sub) + '">' + esc(sub) + '</small><div class="bar"><div class="fill ' + fillClass(Number(p || 0), mode) + '" style="width:' + Math.max(0, Math.min(100, Number(p || 0))) + '%"></div></div></article>'; }
     function chip(k, v) { return '<span class="chip" title="' + esc(k + " " + (v || "未知")) + '"><b>' + esc(k) + '</b>' + esc(v || "未知") + "</span>"; }
+    function renderStatusMeta() {
+      els.nowText.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      els.pageUpdateText.textContent = shortTime(state.lastPageUpdateAt);
+      els.deviceUpdateText.textContent = shortTime(state.lastDeviceSampleAt);
+      const latest = state.messages.reduce((max, m) => Math.max(max, Number(m.receivedAt || 0)), 0);
+      els.latestMessageText.textContent = latest ? timeText(latest) : "暂无";
+    }
 
     function renderDevice(d) {
       if (!d) { els.board.innerHTML = ""; els.alerts.innerHTML = ""; return; }
       const b = d.battery || {}, mem = d.memory || {}, st = d.storage || {}, dev = d.device || {}, net = d.network || {}, svc = d.services || {}, sms = d.sms || {};
+      state.lastDeviceSampleAt = Number(d.sampledAt || 0);
+      renderStatusMeta();
       const sim = (sms.sims || []).map(s => "卡" + (Number(s.slotIndex) + 1) + " " + (s.carrierName || s.displayName || "SIM")).join("；") || "未读取";
       els.board.innerHTML =
         metric("电量", b.level == null ? "未知" : b.level + "%", (b.charging ? "充电" : "未充电") + (b.temperatureC != null ? " · " + b.temperatureC + "°C" : ""), b.level || 0, "battery") +
@@ -435,7 +471,7 @@
       els.status.textContent = "正在读取"; els.hint.textContent = "正在连接坚果手机";
       const [msg] = await Promise.all([apiFetch("/api/messages?" + queryString(state.pageSize, state.offset), { headers: headers() }, 3), loadDevice().catch(() => {})]);
       if (!msg.ok) throw new Error(msg.status === 401 ? "密码错误或未登录" : "读取失败 HTTP " + msg.status);
-      const d = await msg.json(); state.messages = d.messages || []; state.total = d.total || 0; render(); renderPager(); els.statusBox.classList.add("ok"); els.status.textContent = "连接正常"; els.hint.textContent = "当前页 " + state.messages.length + " 条短信 · 状态已更新";
+      const d = await msg.json(); state.messages = d.messages || []; state.total = d.total || 0; state.lastPageUpdateAt = Date.now(); render(); renderPager(); renderStatusMeta(); els.statusBox.classList.add("ok"); els.status.textContent = "连接正常"; els.hint.textContent = "当前页 " + state.messages.length + " 条短信 · 状态已更新";
     }
     async function copyText(text) {
       try { await navigator.clipboard.writeText(text); toast("已复制"); }
@@ -530,8 +566,10 @@
       if (!document.hidden && !els.modal.classList.contains("open") && !els.sendModal.classList.contains("open") && !els.remarkModal.classList.contains("open") && !els.logsModal.classList.contains("open")) {
         load().catch(handleLoadError);
       }
-    }, 30000);
+    }, 120000);
     window.addEventListener("online", () => load().catch(handleLoadError));
+    renderStatusMeta();
+    setInterval(renderStatusMeta, 1000);
     load().catch(handleLoadError);
   </script>
 </body>

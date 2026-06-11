@@ -30,6 +30,7 @@ final class EmbeddedHttpServer {
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private ServerSocket serverSocket;
     private volatile boolean running;
+    private int generation;
 
     private EmbeddedHttpServer(Context context) {
         this.context = context.getApplicationContext();
@@ -40,9 +41,16 @@ final class EmbeddedHttpServer {
         instance.startInternal();
     }
 
+    static synchronized void restart(Context context) {
+        if (instance == null) instance = new EmbeddedHttpServer(context);
+        instance.stopInternal();
+        instance.startInternal();
+    }
+
     private synchronized void startInternal() {
         if (running) return;
         running = true;
+        final int currentGeneration = ++generation;
         executor.execute(() -> {
             try {
                 serverSocket = new ServerSocket(PORT);
@@ -54,9 +62,21 @@ final class EmbeddedHttpServer {
             } catch (Exception error) {
                 Log.w(TAG, "web server stopped", error);
                 AppLog.add(context, "web", "Web 服务停止：" + error);
-                running = false;
+                synchronized (EmbeddedHttpServer.this) {
+                    if (generation == currentGeneration) running = false;
+                }
             }
         });
+    }
+
+    private synchronized void stopInternal() {
+        generation++;
+        running = false;
+        try {
+            if (serverSocket != null) serverSocket.close();
+        } catch (Exception ignored) {
+        }
+        serverSocket = null;
     }
 
     private void handle(Socket socket) {
