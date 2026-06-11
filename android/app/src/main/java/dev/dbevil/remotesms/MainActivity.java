@@ -110,6 +110,10 @@ public class MainActivity extends Activity {
         bridge.setOnClickListener(v -> refreshBridgeStatus());
         root.addView(bridge, matchWrap(0, 0, 0, 10));
 
+        Button logs = actionButton("查看日志", false);
+        logs.setOnClickListener(v -> showLogsDialog());
+        root.addView(logs, matchWrap(0, 0, 0, 10));
+
         Button test = actionButton("写入测试短信", false);
         test.setOnClickListener(v -> {
             SmsPayload payload = new SmsPayload(
@@ -217,6 +221,8 @@ public class MainActivity extends Activity {
                             authToken.getText().toString(),
                             remotePort.getText().toString()
                     ));
+                    AppLog.add(this, "config", "访问和 frp 配置已保存 remotePort=" + remotePort.getText().toString().trim());
+                    SmsSyncService.start(this);
                     updateStatus();
                     Toast.makeText(this, "访问和 frp 配置已保存", Toast.LENGTH_SHORT).show();
                 })
@@ -251,6 +257,25 @@ public class MainActivity extends Activity {
                     Manifest.permission.READ_PHONE_STATE
             }, REQUEST_SMS_PERMISSIONS);
         }
+    }
+
+    private void showLogsDialog() {
+        TextView content = new TextView(this);
+        content.setText(AppLog.recent(this));
+        content.setTextSize(12);
+        content.setTextColor(Color.rgb(35, 48, 51));
+        content.setPadding(dp(8), dp(8), dp(8), dp(8));
+        content.setTextIsSelectable(true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
+
+        new AlertDialog.Builder(this)
+                .setTitle("运行日志")
+                .setView(scroll)
+                .setNegativeButton("关闭", null)
+                .setPositiveButton("刷新", (dialog, which) -> showLogsDialog())
+                .show();
     }
 
     private boolean hasSmsPermissions() {

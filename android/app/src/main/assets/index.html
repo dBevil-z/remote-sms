@@ -189,7 +189,9 @@
     .panel p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
     .field { margin-top: 10px; }
     .field label { display: block; margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+    .phoneRow { display: grid; grid-template-columns: 112px 1fr; gap: 8px; }
     .panel-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .logBox { min-height: 260px; max-height: 58vh; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0,0,0,.08); color: var(--text); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .toast { position: fixed; left: 50%; bottom: 18px; z-index: 9; transform: translateX(-50%); display: none; max-width: min(420px, calc(100vw - 28px)); padding: 10px 14px; border-radius: 999px; background: rgba(30,44,48,.9); color: #fff; box-shadow: var(--shadow); }
     .toast.show { display: block; }
     @media (max-width: 840px) {
@@ -220,6 +222,7 @@
       .toolGrid { grid-template-columns: 1fr; }
       .toolGrid .search { grid-column: auto; }
       .quick { align-items: flex-start; flex-direction: column; }
+      .phoneRow { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -230,7 +233,7 @@
         <svg class="brandIcon" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="10" fill="#D9EEF3"/><path fill="#176B87" d="M14 13h22c2.2 0 4 1.8 4 4v14c0 2.2-1.8 4-4 4H26l-7 5v-5h-5c-2.2 0-4-1.8-4-4V17c0-2.2 1.8-4 4-4z"/><path fill="#fff" fill-opacity=".96" d="M17 20h18v3H17z"/><path fill="#fff" fill-opacity=".78" d="M17 26h13v3H17z"/><circle cx="35" cy="34" r="4" fill="#62BFD6"/></svg>
         <div><h1>短信接收助手</h1><div class="sub">远程收发短信，掌握手机状态</div></div>
       </div>
-      <div class="actions"><button id="sendOpen">发短信</button><button id="settings">设置</button><button class="primary" id="refresh">刷新</button></div>
+      <div class="actions"><button id="sendOpen">发短信</button><button id="logsOpen">日志</button><button id="settings">设置</button><button class="primary" id="refresh">刷新</button></div>
     </header>
 
     <section class="status" id="statusBox">
@@ -266,7 +269,7 @@
   <div class="modal" id="sendModal"><div class="panel">
     <h2>发送短信</h2><p>选择要使用的 SIM 卡，填写号码和短信内容。</p>
     <div class="field"><label>发送 SIM</label><select id="simSelect"></select></div>
-    <div class="field"><label>收件号码</label><input id="recipient" inputmode="tel" placeholder="手机号或短信号码"></div>
+    <div class="field"><label>收件号码</label><div class="phoneRow"><select id="countryCode"><option value="+86">+86 中国</option><option value="+1">+1 美国/加拿大</option><option value="+852">+852 香港</option><option value="+853">+853 澳门</option><option value="+886">+886 台湾</option><option value="+81">+81 日本</option><option value="+82">+82 韩国</option><option value="+65">+65 新加坡</option><option value="+44">+44 英国</option></select><input id="localNumber" inputmode="tel" placeholder="手机号码，不用输入区号"></div></div>
     <div class="field"><label>短信内容</label><textarea id="smsBody" placeholder="输入要发送的短信内容"></textarea></div>
     <div class="panel-actions"><button id="sendClose">取消</button><button class="primary" id="sendSms">发送</button></div>
   </div></div>
@@ -276,6 +279,12 @@
     <input id="remarkName" placeholder="例如 银行卡、工作号、运营商">
     <div class="panel-actions"><button id="remarkCancel">取消</button><button class="primary" id="remarkSave">保存备注</button></div>
   </div></div>
+
+  <div class="modal" id="logsModal"><div class="panel">
+    <h2>运行日志</h2><p>显示最近的服务、网络、发送桥和发送记录日志。</p>
+    <pre class="logBox" id="logsText">正在读取...</pre>
+    <div class="panel-actions"><button id="logsClose">关闭</button><button id="logsCopy">复制</button><button class="primary" id="logsRefresh">刷新</button></div>
+  </div></div>
   <div class="toast" id="toast"></div>
 
   <script>
@@ -283,12 +292,12 @@
       token: document.querySelector("#token"), newToken: document.querySelector("#newToken"),
       status: document.querySelector("#status"), hint: document.querySelector("#hint"), statusBox: document.querySelector("#statusBox"),
       alerts: document.querySelector("#alerts"), list: document.querySelector("#messages"), board: document.querySelector("#deviceBoard"),
-      modal: document.querySelector("#modal"), sendModal: document.querySelector("#sendModal"), remarkModal: document.querySelector("#remarkModal"),
-      simSelect: document.querySelector("#simSelect"), simFilter: document.querySelector("#simFilter"), recipient: document.querySelector("#recipient"),
+      modal: document.querySelector("#modal"), sendModal: document.querySelector("#sendModal"), remarkModal: document.querySelector("#remarkModal"), logsModal: document.querySelector("#logsModal"),
+      simSelect: document.querySelector("#simSelect"), simFilter: document.querySelector("#simFilter"), countryCode: document.querySelector("#countryCode"), localNumber: document.querySelector("#localNumber"),
       smsBody: document.querySelector("#smsBody"), pageInfo: document.querySelector("#pageInfo"), prev: document.querySelector("#prevPage"),
       next: document.querySelector("#nextPage"), search: document.querySelector("#search"), direction: document.querySelector("#directionFilter"),
       codeOnly: document.querySelector("#codeOnly"), quick: document.querySelector("#quickCode"), toast: document.querySelector("#toast"),
-      remarkTarget: document.querySelector("#remarkTarget"), remarkName: document.querySelector("#remarkName")
+      remarkTarget: document.querySelector("#remarkTarget"), remarkName: document.querySelector("#remarkName"), logsText: document.querySelector("#logsText")
     };
     const state = { messages: [], sims: [], offset: 0, total: 0, pageSize: 10, remarkNumber: "" };
     const urlToken = new URLSearchParams(location.search).get("token");
@@ -300,9 +309,53 @@
     function toast(text) { els.toast.textContent = text; els.toast.classList.add("show"); clearTimeout(toast.timer); toast.timer = setTimeout(() => els.toast.classList.remove("show"), 1800); }
     function openModal(m) { m.classList.add("open"); }
     function closeModal(m) { m.classList.remove("open"); }
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+    async function apiFetch(url, options = {}, retries = 2) {
+      let lastError;
+      const method = String(options.method || "GET").toUpperCase();
+      const canRetry = method === "GET";
+      const attempts = canRetry ? retries + 1 : 1;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const r = await fetch(url, options);
+          if (r.ok || !canRetry || ![408,429,500,502,503,504].includes(r.status) || i === attempts - 1) return r;
+          lastError = new Error("HTTP " + r.status);
+        } catch (e) {
+          lastError = e;
+          if (!canRetry || i === attempts - 1) throw e;
+        }
+        els.status.textContent = "连接重试中";
+        els.hint.textContent = "网络或 frp 可能抖动，正在第 " + (i + 2) + " 次重试";
+        els.statusBox.classList.remove("ok");
+        await sleep(600 * (i + 1));
+      }
+      throw lastError;
+    }
     function remarks() { try { return JSON.parse(localStorage.getItem("smsRemarks") || "{}"); } catch (_) { return {}; } }
     function setRemark(number, name) { const r = remarks(); if (name) r[number] = name; else delete r[number]; localStorage.setItem("smsRemarks", JSON.stringify(r)); }
     function displayName(number) { const r = remarks(); return r[number] ? r[number] + " · " + number : number; }
+    function cleanNumber(v) { return String(v || "").trim().replace(/[\s() -]/g, ""); }
+    function splitPhone(value) {
+      const n = cleanNumber(value);
+      const codes = ["+886","+853","+852","+86","+82","+81","+65","+44","+1"];
+      for (const code of codes) {
+        if (n.startsWith(code)) return { countryCode: code, localNumber: n.slice(code.length) };
+      }
+      if (n.startsWith("00")) return splitPhone("+" + n.slice(2));
+      return { countryCode: "+86", localNumber: n };
+    }
+    function composedRecipient() {
+      const local = cleanNumber(els.localNumber.value);
+      if (!local) return "";
+      if (local.startsWith("+")) return local;
+      if (local.startsWith("00")) return "+" + local.slice(2);
+      const countryDigits = els.countryCode.value.replace("+", "");
+      let normalized = local.replace(/^0+/, "");
+      if (normalized.startsWith(countryDigits) && normalized.length > countryDigits.length + 4) {
+        normalized = normalized.slice(countryDigits.length);
+      }
+      return els.countryCode.value + normalized;
+    }
     function bytes(v) { if (!v) return "0 B"; const u = ["B","KB","MB","GB","TB"]; let n = Number(v), i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : Math.round(n)) + " " + u[i]; }
     function uptime(ms) { let s = Math.floor(Number(ms || 0) / 1000), d = Math.floor(s / 86400); s %= 86400; let h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return (d ? d + "天 " : "") + h + "时" + m + "分"; }
     function fillClass(p, mode) { if (mode === "battery") return p <= 20 ? "bad" : (p <= 40 ? "warn" : ""); return p >= 90 ? "bad" : (p >= 75 ? "warn" : ""); }
@@ -375,12 +428,12 @@
       if (els.codeOnly.checked) p.set("codeOnly", "1");
       return p.toString();
     }
-    async function loadDevice() { const r = await fetch("/api/device", { headers: headers() }); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取设备状态失败 HTTP " + r.status); renderDevice(await r.json()); }
-    async function loadSims() { const r = await fetch("/api/sims", { headers: headers() }); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取 SIM 失败 HTTP " + r.status); const d = await r.json(); state.sims = d.sims || []; renderSims(); }
+    async function loadDevice() { const r = await apiFetch("/api/device", { headers: headers() }, 3); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取设备状态失败 HTTP " + r.status); renderDevice(await r.json()); }
+    async function loadSims() { const r = await apiFetch("/api/sims", { headers: headers() }, 3); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取 SIM 失败 HTTP " + r.status); const d = await r.json(); state.sims = d.sims || []; renderSims(); }
     async function load() {
       if (!els.token.value) { els.status.textContent = "未登录"; els.hint.textContent = "请在设置里填写访问密码"; els.statusBox.classList.remove("ok"); renderDevice(null); openModal(els.modal); return; }
       els.status.textContent = "正在读取"; els.hint.textContent = "正在连接坚果手机";
-      const [msg] = await Promise.all([fetch("/api/messages?" + queryString(state.pageSize, state.offset), { headers: headers() }), loadDevice().catch(() => {})]);
+      const [msg] = await Promise.all([apiFetch("/api/messages?" + queryString(state.pageSize, state.offset), { headers: headers() }, 3), loadDevice().catch(() => {})]);
       if (!msg.ok) throw new Error(msg.status === 401 ? "密码错误或未登录" : "读取失败 HTTP " + msg.status);
       const d = await msg.json(); state.messages = d.messages || []; state.total = d.total || 0; render(); renderPager(); els.statusBox.classList.add("ok"); els.status.textContent = "连接正常"; els.hint.textContent = "当前页 " + state.messages.length + " 条短信 · 状态已更新";
     }
@@ -389,7 +442,7 @@
       catch (_) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); toast("已复制"); }
     }
     async function exportData(type) {
-      const r = await fetch("/api/messages?" + queryString(500, 0), { headers: headers() });
+      const r = await apiFetch("/api/messages?" + queryString(500, 0), { headers: headers() }, 3);
       if (!r.ok) { toast("导出失败"); return; }
       const data = await r.json(), rows = data.messages || [];
       let content, name, mime;
@@ -404,29 +457,57 @@
     function openSend(prefill) {
       if (!els.token.value) { openModal(els.modal); return; }
       openModal(els.sendModal); loadSims().catch(e => toast(e.message));
-      if (prefill) { els.recipient.value = prefill.recipient || ""; els.smsBody.value = prefill.body || ""; if (prefill.subscriptionId != null) els.simSelect.value = String(prefill.subscriptionId); }
-      setTimeout(() => els.recipient.focus(), 30);
+      if (prefill) {
+        const phone = splitPhone(prefill.recipient || "");
+        els.countryCode.value = phone.countryCode;
+        els.localNumber.value = phone.localNumber;
+        els.smsBody.value = prefill.body || "";
+        if (prefill.subscriptionId != null) els.simSelect.value = String(prefill.subscriptionId);
+      }
+      setTimeout(() => els.localNumber.focus(), 30);
     }
     function debounce(fn, ms) { let id; return () => { clearTimeout(id); id = setTimeout(fn, ms); }; }
+    function handleLoadError(e) {
+      els.status.textContent = "连接中断";
+      els.hint.textContent = "网络或 frp 可能抖动，稍后自动重试：" + e.message;
+      els.statusBox.classList.remove("ok");
+      toast(e.message);
+    }
+    async function loadLogs() {
+      els.logsText.textContent = "正在读取...";
+      try {
+        const r = await apiFetch("/api/logs", { headers: headers() }, 3);
+        if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "HTTP " + r.status);
+        const d = await r.json();
+        els.logsText.textContent = d.logs || "暂无日志";
+      } catch (e) {
+        els.logsText.textContent = "读取日志失败：" + e.message;
+      }
+    }
 
     document.querySelector("#settings").onclick = () => openModal(els.modal);
     document.querySelector("#close").onclick = () => closeModal(els.modal);
     els.modal.onclick = e => { if (e.target === els.modal) closeModal(els.modal); };
-    document.querySelector("#save").onclick = () => { localStorage.setItem("smsToken", els.token.value); closeModal(els.modal); state.offset = 0; load().catch(e => { els.status.textContent = e.message; els.hint.textContent = "请检查访问密码"; els.statusBox.classList.remove("ok"); }); };
+    document.querySelector("#save").onclick = () => { localStorage.setItem("smsToken", els.token.value); closeModal(els.modal); state.offset = 0; load().catch(handleLoadError); };
     document.querySelector("#updateToken").onclick = async () => {
       const r = await fetch("/api/config", { method: "POST", headers: { ...headers(), "Content-Type": "application/json" }, body: JSON.stringify({ token: els.newToken.value }) });
       if (!r.ok) { els.status.textContent = r.status === 401 ? "当前密码错误，无法修改" : "更新失败 HTTP " + r.status; return; }
       els.token.value = els.newToken.value; localStorage.setItem("smsToken", els.token.value); els.newToken.value = ""; closeModal(els.modal); toast("访问密码已更新"); load().catch(e => toast(e.message));
     };
+    document.querySelector("#logsOpen").onclick = () => { openModal(els.logsModal); loadLogs(); };
+    document.querySelector("#logsClose").onclick = () => closeModal(els.logsModal);
+    document.querySelector("#logsRefresh").onclick = loadLogs;
+    document.querySelector("#logsCopy").onclick = () => copyText(els.logsText.textContent || "");
+    els.logsModal.onclick = e => { if (e.target === els.logsModal) closeModal(els.logsModal); };
     document.querySelector("#sendOpen").onclick = () => openSend();
     document.querySelector("#sendClose").onclick = () => closeModal(els.sendModal);
     els.sendModal.onclick = e => { if (e.target === els.sendModal) closeModal(els.sendModal); };
     document.querySelector("#sendSms").onclick = async () => {
-      const payload = { subscriptionId: Number(els.simSelect.value || -1), recipient: els.recipient.value, body: els.smsBody.value };
+      const payload = { subscriptionId: Number(els.simSelect.value || -1), countryCode: els.countryCode.value, localNumber: els.localNumber.value, recipient: composedRecipient(), body: els.smsBody.value };
       const r = await fetch("/api/send", { method: "POST", headers: { ...headers(), "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { els.status.textContent = d.error || "发送失败 HTTP " + r.status; els.hint.textContent = "请检查号码、内容和发送权限"; return; }
-      closeModal(els.sendModal); els.recipient.value = ""; els.smsBody.value = ""; state.offset = 0; toast("短信已提交发送"); await load(); setTimeout(() => load().catch(() => {}), 2500); setTimeout(() => load().catch(() => {}), 8000);
+      closeModal(els.sendModal); els.localNumber.value = ""; els.smsBody.value = ""; state.offset = 0; toast("短信已提交发送"); await load(); setTimeout(() => load().catch(() => {}), 2500); setTimeout(() => load().catch(() => {}), 8000);
     };
     els.list.onclick = e => {
       const copy = e.target.getAttribute("data-copy"); if (copy != null) return copyText(copy);
@@ -436,16 +517,22 @@
     els.quick.onclick = e => { const copy = e.target.getAttribute("data-copy"); if (copy != null) copyText(copy); };
     document.querySelector("#remarkCancel").onclick = () => closeModal(els.remarkModal);
     document.querySelector("#remarkSave").onclick = () => { setRemark(state.remarkNumber, els.remarkName.value.trim()); closeModal(els.remarkModal); render(); toast("备注已保存"); };
-    document.querySelector("#refresh").onclick = () => load().catch(e => toast(e.message));
-    els.prev.onclick = () => { state.offset = Math.max(0, state.offset - state.pageSize); load().catch(e => toast(e.message)); };
-    els.next.onclick = () => { if (state.offset + state.pageSize < state.total) { state.offset += state.pageSize; load().catch(e => toast(e.message)); } };
-    const filterChanged = debounce(() => { state.offset = 0; load().catch(e => toast(e.message)); }, 260);
+    document.querySelector("#refresh").onclick = () => load().catch(handleLoadError);
+    els.prev.onclick = () => { state.offset = Math.max(0, state.offset - state.pageSize); load().catch(handleLoadError); };
+    els.next.onclick = () => { if (state.offset + state.pageSize < state.total) { state.offset += state.pageSize; load().catch(handleLoadError); } };
+    const filterChanged = debounce(() => { state.offset = 0; load().catch(handleLoadError); }, 260);
     els.search.oninput = filterChanged; els.direction.onchange = filterChanged; els.simFilter.onchange = filterChanged; els.codeOnly.onchange = filterChanged;
-    document.querySelector("#clearFilters").onclick = () => { els.search.value = ""; els.direction.value = "all"; els.simFilter.value = "all"; els.codeOnly.checked = false; state.offset = 0; load().catch(e => toast(e.message)); };
+    document.querySelector("#clearFilters").onclick = () => { els.search.value = ""; els.direction.value = "all"; els.simFilter.value = "all"; els.codeOnly.checked = false; state.offset = 0; load().catch(handleLoadError); };
     document.querySelector("#exportCsv").onclick = () => exportData("csv");
     document.querySelector("#exportJson").onclick = () => exportData("json");
     loadSims().catch(() => {});
-    load().catch(e => { els.status.textContent = e.message; els.hint.textContent = "请检查访问密码"; els.statusBox.classList.remove("ok"); });
+    setInterval(() => {
+      if (!document.hidden && !els.modal.classList.contains("open") && !els.sendModal.classList.contains("open") && !els.remarkModal.classList.contains("open") && !els.logsModal.classList.contains("open")) {
+        load().catch(handleLoadError);
+      }
+    }, 30000);
+    window.addEventListener("online", () => load().catch(handleLoadError));
+    load().catch(handleLoadError);
   </script>
 </body>
 </html>

@@ -46,12 +46,14 @@ final class EmbeddedHttpServer {
         executor.execute(() -> {
             try {
                 serverSocket = new ServerSocket(PORT);
+                AppLog.add(context, "web", "Web 服务已启动 port=" + PORT);
                 while (running) {
                     Socket socket = serverSocket.accept();
                     executor.execute(() -> handle(socket));
                 }
             } catch (Exception error) {
                 Log.w(TAG, "web server stopped", error);
+                AppLog.add(context, "web", "Web 服务停止：" + error);
                 running = false;
             }
         });
@@ -126,6 +128,17 @@ final class EmbeddedHttpServer {
                 return;
             }
 
+            if (target.startsWith("/api/logs")) {
+                if (!authorized(headers, target)) {
+                    send(writer, 401, "application/json; charset=utf-8", "{\"error\":\"未授权\"}");
+                    return;
+                }
+                JSONObject response = new JSONObject();
+                response.put("logs", AppLog.recent(context));
+                send(writer, 200, "application/json; charset=utf-8", response.toString());
+                return;
+            }
+
             if (target.startsWith("/api/send")) {
                 if (!authorized(headers, target)) {
                     send(writer, 401, "application/json; charset=utf-8", "{\"error\":\"未授权\"}");
@@ -139,6 +152,9 @@ final class EmbeddedHttpServer {
                     JSONObject request = new JSONObject(body);
                     int subscriptionId = request.optInt("subscriptionId", -1);
                     String recipient = request.optString("recipient", "");
+                    if (recipient.trim().isEmpty()) {
+                        recipient = request.optString("countryCode", "") + request.optString("localNumber", "");
+                    }
                     String message = request.optString("body", "");
                     JSONObject response = SmsSendService.send(context, subscriptionId, recipient, message);
                     send(writer, 200, "application/json; charset=utf-8", response.toString());
@@ -173,6 +189,8 @@ final class EmbeddedHttpServer {
                             request.optString("frpAuthToken", current.authToken),
                             request.optString("frpRemotePort", current.remotePort)
                     ));
+                    Config.FrpConfig updated = Config.frpConfig(context);
+                    AppLog.add(context, "config", "网页配置已更新 remotePort=" + updated.remotePort);
                 }
                 JSONObject response = Config.configJson(context);
                 response.put("deviceId", Config.deviceId(context));
@@ -189,6 +207,7 @@ final class EmbeddedHttpServer {
             send(writer, 200, "text/html; charset=utf-8", html(context));
         } catch (Exception error) {
             Log.w(TAG, "web request failed", error);
+            AppLog.add(context, "web", "请求处理失败：" + error);
         }
     }
 

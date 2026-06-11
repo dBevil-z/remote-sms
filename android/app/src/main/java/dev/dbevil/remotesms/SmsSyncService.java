@@ -28,6 +28,7 @@ public class SmsSyncService extends Service {
     private final Runnable poll = new Runnable() {
         @Override
         public void run() {
+            EmbeddedHttpServer.start(SmsSyncService.this);
             syncRecentInbox();
             handler.postDelayed(this, POLL_INTERVAL_MS);
         }
@@ -46,12 +47,14 @@ public class SmsSyncService extends Service {
     public void onCreate() {
         super.onCreate();
         EmbeddedHttpServer.start(this);
+        AppLog.add(this, "service", "短信服务启动，Web 端口 8787");
         startForeground(NOTIFICATION_ID, notification());
         handler.post(poll);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        EmbeddedHttpServer.start(this);
         syncRecentInbox();
         return START_STICKY;
     }
@@ -59,6 +62,7 @@ public class SmsSyncService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacks(poll);
+        AppLog.add(this, "service", "短信服务销毁，等待系统自动拉起");
         super.onDestroy();
     }
 
@@ -133,11 +137,13 @@ public class SmsSyncService extends Service {
             }
         } catch (Exception error) {
             Log.w(TAG, "inbox backfill failed", error);
+            AppLog.add(this, "sync", "收件箱同步失败：" + error);
             return;
         }
 
         if (newest > lastDate) {
             Config.prefs(this).edit().putLong(Config.KEY_LAST_SMS_DATE, newest).apply();
+            AppLog.add(this, "sync", "收件箱同步完成，最新时间 " + newest);
         }
     }
 }
