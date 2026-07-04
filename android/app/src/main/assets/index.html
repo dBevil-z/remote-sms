@@ -421,6 +421,7 @@
         </div>
       </section>
       <section class="logList" id="logsList"></section>
+      <div class="pager"><button id="logsPrevPage">上一页</button><span id="logsPageInfo">第 1 / 1 页</span><button id="logsNextPage">下一页</button></div>
     </section>
   </div>
 
@@ -463,10 +464,11 @@
       logsList: document.querySelector("#logsList"), logSearch: document.querySelector("#logSearch"), logTypeFilter: document.querySelector("#logTypeFilter"),
       logIssueFilter: document.querySelector("#logIssueFilter"), logStartDate: document.querySelector("#logStartDate"), logEndDate: document.querySelector("#logEndDate"), logSummary: document.querySelector("#logSummary"),
       logTotal: document.querySelector("#logTotal"), logIssues: document.querySelector("#logIssues"), logFrp: document.querySelector("#logFrp"), logUpdated: document.querySelector("#logUpdated"),
+      logPrev: document.querySelector("#logsPrevPage"), logNext: document.querySelector("#logsNextPage"), logPageInfo: document.querySelector("#logsPageInfo"),
       nowText: document.querySelector("#nowText"), pageUpdateText: document.querySelector("#pageUpdateText"),
       deviceUpdateText: document.querySelector("#deviceUpdateText"), latestMessageText: document.querySelector("#latestMessageText")
     };
-    const state = { messages: [], sims: [], logs: [], rawLogs: "", logTypes: [], offset: 0, total: 0, pageSize: 10, remarkNumber: "", lastPageUpdateAt: 0, lastDeviceSampleAt: 0 };
+    const state = { messages: [], sims: [], logs: [], rawLogs: "", logTypes: [], offset: 0, total: 0, pageSize: 10, logPage: 0, logPageSize: 30, remarkNumber: "", lastPageUpdateAt: 0, lastDeviceSampleAt: 0, device: null };
     const urlToken = new URLSearchParams(location.search).get("token");
     if (urlToken) localStorage.setItem("smsToken", urlToken);
     els.token.value = localStorage.getItem("smsToken") || "";
@@ -561,6 +563,59 @@
     function statusTag(m) { if (m.direction !== "outgoing") return '<span class="tag">收到</span>'; const text = m.statusText || "发送中"; const cls = m.status === "failed" ? " fail" : (m.status === "sending" ? " wait" : ""); return '<span class="tag' + cls + '">' + esc(text) + "</span>"; }
     function metric(title, value, sub, p, mode) { return '<article class="metric"><h3>' + esc(title) + '</h3><strong>' + esc(value) + '</strong><small title="' + esc(sub) + '">' + esc(sub) + '</small><div class="bar"><div class="fill ' + fillClass(Number(p || 0), mode) + '" style="width:' + Math.max(0, Math.min(100, Number(p || 0))) + '%"></div></div></article>'; }
     function chip(k, v) { return '<span class="chip" title="' + esc(k + " " + (v || "未知")) + '"><b>' + esc(k) + '</b>' + esc(v || "未知") + "</span>"; }
+    function serviceSnapshot() { return ((state.device || {}).services || {}).service || {}; }
+    function updateConnectionStatus() {
+      if (!els.token.value) {
+        els.status.textContent = "未登录";
+        els.hint.textContent = "请在设置里填写访问密码";
+        els.statusBox.classList.remove("ok");
+        return;
+      }
+      const health = serviceSnapshot();
+      const tunnel = ((state.device || {}).services || {}).frpTunnel || {};
+      const pageText = "当前页 " + state.messages.length + " 条短信";
+      const tunnelConnectedAt = Number(tunnel.lastConnectedAt || 0);
+      const publicCheckedAt = Number(health.lastPublicCheckAt || 0);
+      if (health.localWebReachable === false) {
+        els.status.textContent = "本机服务异常";
+        els.hint.textContent = pageText + " · 8787 健康检查失败" + (health.localWebError ? " · " + health.localWebError : "");
+        els.statusBox.classList.remove("ok");
+        return;
+      }
+      if (tunnel.enabled && tunnel.running === false) {
+        els.status.textContent = "frp 未运行";
+        els.hint.textContent = pageText + " · 本机正常，但 frp 隧道没有起来" + (tunnel.lastError ? " · " + tunnel.lastError : "");
+        els.statusBox.classList.remove("ok");
+        return;
+      }
+      if (tunnel.running && tunnelConnectedAt > 0 && tunnelConnectedAt > publicCheckedAt) {
+        els.status.textContent = "状态复核中";
+        els.hint.textContent = pageText + " · frp 隧道刚连上，正在复核公网入口";
+        els.statusBox.classList.remove("ok");
+        return;
+      }
+      if (health.publicReachable === false) {
+        els.status.textContent = "公网不可达";
+        els.hint.textContent = pageText + " · 本机正常，公网入口最近检测失败" + (health.publicError ? " · " + health.publicError : "");
+        els.statusBox.classList.remove("ok");
+        return;
+      }
+      if (health.localWebReachable === true && health.publicReachable === true) {
+        els.status.textContent = "连接正常";
+        els.hint.textContent = pageText + " · 本机和公网入口都正常";
+        els.statusBox.classList.add("ok");
+        return;
+      }
+      if (health.localWebReachable === true) {
+        els.status.textContent = "本机正常";
+        els.hint.textContent = pageText + " · 已连上手机" + (tunnel.running ? "，隧道已启动，等待公网健康检查" : "，等待公网健康检查");
+        els.statusBox.classList.remove("ok");
+        return;
+      }
+      els.status.textContent = "状态读取中";
+      els.hint.textContent = pageText + " · 正在等待手机侧健康检查结果";
+      els.statusBox.classList.remove("ok");
+    }
     function renderStatusMeta() {
       els.nowText.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       els.pageUpdateText.textContent = shortTime(state.lastPageUpdateAt);
@@ -570,8 +625,11 @@
     }
 
     function renderDevice(d) {
-      if (!d) { els.board.innerHTML = ""; els.alerts.innerHTML = ""; return; }
+      if (!d) { state.device = null; els.board.innerHTML = ""; els.alerts.innerHTML = ""; updateConnectionStatus(); return; }
+      state.device = d;
       const b = d.battery || {}, mem = d.memory || {}, st = d.storage || {}, dev = d.device || {}, net = d.network || {}, svc = d.services || {}, sms = d.sms || {};
+      const health = svc.service || {};
+      const tunnel = svc.frpTunnel || {};
       state.lastDeviceSampleAt = Number(d.sampledAt || 0);
       renderStatusMeta();
       const sim = (sms.sims || []).map(s => "卡" + (Number(s.slotIndex) + 1) + " " + (s.carrierName || s.displayName || "SIM")).join("；") || "未读取";
@@ -583,15 +641,25 @@
         '<article class="metric facts"><div class="compactFacts">' +
         chip("设备", [(dev.manufacturer || ""), dev.model].filter(Boolean).join(" ")) + chip("系统", "Android " + (dev.android || "")) +
         chip("运行", uptime(dev.uptimeMs)) + chip("网络", (net.connected ? "已连 " : "未连 ") + (net.type || "")) +
-        chip("桥", svc.sendBridge ? "已连接" : (svc.requiresSendBridge ? "未启动" : "不需要")) + chip("SIM", sim) + "</div></article>";
+        chip("桥", svc.sendBridge ? "已连接" : (svc.requiresSendBridge ? "未启动" : "不需要")) +
+        chip("公网", health.publicReachable === true ? "可访问" : (health.publicReachable === false ? "不可达" : "待检测")) +
+        chip("隧道", tunnel.enabled ? (tunnel.running ? "运行中" : "未运行") : "未配置") +
+        chip("巡检", shortTime(health.lastWatchdogAt)) +
+        chip("省电", svc.batteryOptimizationsIgnored ? "已放行" : "未放行") +
+        chip("SIM", sim) + "</div></article>";
       const alerts = [];
       if (b.level != null && b.level <= 20) alerts.push(["bad", "电量偏低"]);
       if (Number(st.usedPercent || 0) >= 90) alerts.push(["bad", "存储将满"]);
       if (Number(mem.usedPercent || 0) >= 90) alerts.push(["warn", "内存压力高"]);
       if (!net.connected) alerts.push(["bad", "网络未连接"]);
+      if (health.localWebReachable === false) alerts.push(["bad", "8787 本机服务异常"]);
+      if (tunnel.enabled && tunnel.running === false) alerts.push(["bad", "frp 隧道未启动"]);
+      if (health.publicReachable === false) alerts.push(["bad", "公网入口异常"]);
       if (svc.requiresSendBridge && !svc.sendBridge) alerts.push(["bad", "发送桥未启动"]);
+      if (!svc.batteryOptimizationsIgnored) alerts.push(["warn", "未加入省电白名单"]);
       if (!alerts.length) alerts.push(["ok", "设备状态正常"]);
       els.alerts.innerHTML = alerts.map(a => '<span class="pill ' + a[0] + '">' + esc(a[1]) + "</span>").join("");
+      updateConnectionStatus();
     }
 
     function renderQuickCode() {
@@ -643,14 +711,14 @@
       if (endAt) p.set("endAt", String(endAt));
       return p.toString();
     }
-    async function loadDevice() { const r = await apiFetch("/api/device", { headers: headers() }, 3); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取设备状态失败 HTTP " + r.status); renderDevice(await r.json()); }
+    async function loadDevice() { const r = await apiFetch("/api/device", { headers: headers() }, 3); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取设备状态失败 HTTP " + r.status); const data = await r.json(); renderDevice(data); return data; }
     async function loadSims() { const r = await apiFetch("/api/sims", { headers: headers() }, 3); if (!r.ok) throw new Error(r.status === 401 ? "密码错误或未登录" : "读取 SIM 失败 HTTP " + r.status); const d = await r.json(); state.sims = d.sims || []; renderSims(); }
     async function load() {
       if (!els.token.value) { els.status.textContent = "未登录"; els.hint.textContent = "请在设置里填写访问密码"; els.statusBox.classList.remove("ok"); renderDevice(null); openModal(els.modal); return; }
       els.status.textContent = "正在读取"; els.hint.textContent = "正在连接坚果手机";
-      const [msg] = await Promise.all([apiFetch("/api/messages?" + queryString(state.pageSize, state.offset), { headers: headers() }, 3), loadDevice().catch(() => {})]);
+      const [msg] = await Promise.all([apiFetch("/api/messages?" + queryString(state.pageSize, state.offset), { headers: headers() }, 3), loadDevice().catch(() => null)]);
       if (!msg.ok) throw new Error(msg.status === 401 ? "密码错误或未登录" : "读取失败 HTTP " + msg.status);
-      const d = await msg.json(); state.messages = d.messages || []; state.total = d.total || 0; state.lastPageUpdateAt = Date.now(); render(); renderPager(); renderStatusMeta(); els.statusBox.classList.add("ok"); els.status.textContent = "连接正常"; els.hint.textContent = "当前页 " + state.messages.length + " 条短信 · 状态已更新";
+      const d = await msg.json(); state.messages = d.messages || []; state.total = d.total || 0; state.lastPageUpdateAt = Date.now(); render(); renderPager(); renderStatusMeta(); updateConnectionStatus();
     }
     async function copyText(text) {
       try { await navigator.clipboard.writeText(text); toast("已复制"); }
@@ -730,14 +798,24 @@
       els.logFrp.textContent = String(frp);
       els.logUpdated.textContent = sampledAt ? shortTime(sampledAt) : "未读取";
     }
+    function renderLogPager(total) {
+      const pages = Math.max(Math.ceil(total / state.logPageSize), 1);
+      if (state.logPage > pages - 1) state.logPage = pages - 1;
+      els.logPageInfo.textContent = "第 " + (state.logPage + 1) + " / " + pages + " 页";
+      els.logPrev.disabled = state.logPage <= 0;
+      els.logNext.disabled = state.logPage >= pages - 1;
+    }
     function renderLogs() {
       const logs = filteredLogs();
-      els.logSummary.textContent = "当前显示 " + logs.length + " 条 · 原始日志 " + state.logs.length + " 条";
-      if (!logs.length) {
+      renderLogPager(logs.length);
+      const start = state.logPage * state.logPageSize;
+      const pageLogs = logs.slice(start, start + state.logPageSize);
+      els.logSummary.textContent = "当前显示 " + pageLogs.length + " 条 · 筛选结果 " + logs.length + " 条 · 原始日志 " + state.logs.length + " 条";
+      if (!pageLogs.length) {
         els.logsList.innerHTML = '<article class="logRow"><div class="logDetail">没有匹配的日志</div></article>';
         return;
       }
-      els.logsList.innerHTML = logs.map(entry => '<article class="logRow">' +
+      els.logsList.innerHTML = pageLogs.map(entry => '<article class="logRow">' +
         '<div class="logTime">' + esc(entry.time || "未知时间") + '</div>' +
         '<div class="logType ' + logTypeClass(entry) + '">' + esc(entry.type || "event") + '</div>' +
         '<div class="logDetail">' + esc(entry.detail || entry.line || "") + '</div>' +
@@ -752,6 +830,7 @@
         state.logs = d.entries || [];
         state.rawLogs = d.logs || "";
         state.logTypes = d.types || [];
+        state.logPage = 0;
         renderLogTypes();
         renderLogStats(d.sampledAt);
         renderLogs();
@@ -778,17 +857,20 @@
       els.logSearch.value = ""; els.logStartDate.value = ""; els.logEndDate.value = "";
       const type = document.querySelector('input[name="logTypeFilter"][value="all"]'); if (type) type.checked = true;
       const issue = document.querySelector('input[name="logIssueFilter"][value="all"]'); if (issue) issue.checked = true;
+      state.logPage = 0;
       renderLogs();
     };
-    const logFilterChanged = debounce(renderLogs, 180);
+    const logFilterChanged = debounce(() => { state.logPage = 0; renderLogs(); }, 180);
     els.logSearch.oninput = logFilterChanged;
-    els.logTypeFilter.onchange = renderLogs;
-    els.logIssueFilter.onchange = renderLogs;
-    els.logStartDate.onchange = renderLogs;
-    els.logEndDate.onchange = renderLogs;
+    els.logTypeFilter.onchange = () => { state.logPage = 0; renderLogs(); };
+    els.logIssueFilter.onchange = () => { state.logPage = 0; renderLogs(); };
+    els.logStartDate.onchange = () => { state.logPage = 0; renderLogs(); };
+    els.logEndDate.onchange = () => { state.logPage = 0; renderLogs(); };
     document.querySelectorAll("[data-log-range]").forEach(button => {
-      button.onclick = () => { setDateRange(els.logStartDate, els.logEndDate, button.getAttribute("data-log-range")); renderLogs(); };
+      button.onclick = () => { setDateRange(els.logStartDate, els.logEndDate, button.getAttribute("data-log-range")); state.logPage = 0; renderLogs(); };
     });
+    els.logPrev.onclick = () => { state.logPage = Math.max(0, state.logPage - 1); renderLogs(); };
+    els.logNext.onclick = () => { state.logPage += 1; renderLogs(); };
     document.querySelector("#sendOpen").onclick = () => openSend();
     document.querySelector("#sendClose").onclick = () => closeModal(els.sendModal);
     els.sendModal.onclick = e => { if (e.target === els.sendModal) closeModal(els.sendModal); };

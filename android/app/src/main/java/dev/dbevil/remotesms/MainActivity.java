@@ -20,8 +20,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 public class MainActivity extends Activity {
     private static final int REQUEST_SMS_PERMISSIONS = 1001;
+    private static final int LOG_PAGE_SIZE = 24;
 
     private TextView status;
     private boolean bridgeChecked;
@@ -110,6 +114,14 @@ public class MainActivity extends Activity {
         bridge.setOnClickListener(v -> refreshBridgeStatus());
         root.addView(bridge, matchWrap(0, 0, 0, 10));
 
+        Button frpRestart = actionButton("重启 frp 隧道", false);
+        frpRestart.setOnClickListener(v -> {
+            FrpClient.restart(this, "手动重启");
+            updateStatus();
+            Toast.makeText(this, "正在重启 frp 隧道", Toast.LENGTH_SHORT).show();
+        });
+        root.addView(frpRestart, matchWrap(0, 0, 0, 10));
+
         Button logs = actionButton("查看日志", false);
         logs.setOnClickListener(v -> showLogsDialog());
         root.addView(logs, matchWrap(0, 0, 0, 10));
@@ -179,21 +191,42 @@ public class MainActivity extends Activity {
         Config.FrpConfig frp = Config.frpConfig(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(4), dp(2), dp(4), dp(2));
+        content.setPadding(dp(16), dp(16), dp(16), dp(16));
+        content.setBackground(dialogBackground());
+
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(16), dp(16), dp(16), dp(16));
+        hero.setBackground(heroBackground());
 
         TextView title = new TextView(this);
         title.setText("访问设置");
-        title.setTextSize(22);
+        title.setTextSize(24);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(Color.rgb(28, 42, 45));
-        content.addView(title, matchWrap(0, 0, 0, 4));
+        title.setTextColor(Color.WHITE);
+        hero.addView(title, matchWrap(0, 0, 0, 4));
 
         TextView intro = new TextView(this);
-        intro.setText("配置远程网页密码和公网入口。所有信息只保存在这台手机本机。");
+        intro.setText("统一管理网页密码、公开入口和 frp 隧道。保存后会自动重启相关服务。");
         intro.setTextSize(13);
-        intro.setTextColor(Color.rgb(91, 106, 110));
+        intro.setTextColor(Color.argb(220, 255, 255, 255));
         intro.setLineSpacing(dp(2), 1.0f);
-        content.addView(intro, matchWrap(0, 0, 0, 14));
+        hero.addView(intro, matchWrap(0, 0, 0, 12));
+
+        LinearLayout heroTags = new LinearLayout(this);
+        heroTags.setOrientation(LinearLayout.HORIZONTAL);
+        heroTags.addView(infoChip("仅保存在本机"), new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        LinearLayout.LayoutParams tagParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        tagParams.leftMargin = dp(8);
+        heroTags.addView(infoChip("自动拉起 frp"), tagParams);
+        hero.addView(heroTags, matchWrap(0, 0, 0, 0));
+        content.addView(hero, matchWrap(0, 0, 0, 12));
 
         EditText token = settingInput("请输入访问密码", Config.token(this), true);
         EditText publicUrl = settingInput("http://example.com:65439", frp.publicUrl, false);
@@ -211,42 +244,66 @@ public class MainActivity extends Activity {
         LinearLayout frpCard = settingCard("frp 穿透", "保存公网入口和 frp 连接信息，便于状态展示和排查");
         frpCard.addView(settingItem("公网入口", "浏览器实际访问的地址，用于远程状态检测。", publicUrl), matchWrap(0, 0, 0, 10));
         frpCard.addView(settingItem("frp 服务器", "仅用于记录和排查，可留空。", serverAddr), matchWrap(0, 0, 0, 10));
-        frpCard.addView(settingItem("frp 服务端口", "frps 服务端口。", serverPort), matchWrap(0, 0, 0, 10));
-        frpCard.addView(settingItem("frp 远端端口", "映射到手机本机 8787 的公网端口。", remotePort), matchWrap(0, 0, 0, 10));
+        frpCard.addView(settingPairRow(
+                "frp 服务端口", "frps 服务端口。", serverPort,
+                "frp 远端端口", "映射到手机本机 8787 的公网端口。", remotePort
+        ), matchWrap(0, 0, 0, 10));
         frpCard.addView(settingItem("frp 认证 token", "如 frp 服务需要认证可填写。", authToken), matchWrap(0, 0, 0, 0));
         content.addView(frpCard, matchWrap(0, 0, 0, 0));
+
+        TextView summary = new TextView(this);
+        summary.setText("当前公开入口：" + (frp.publicUrl.isEmpty() ? "未配置" : frp.publicUrl)
+                + "\n目标映射：127.0.0.1:8787 -> " + (frp.remotePort.isEmpty() ? "未配置端口" : frp.remotePort)
+                + "\n保存后会自动刷新网页服务和 frp 隧道状态。");
+        summary.setTextSize(12);
+        summary.setTextColor(Color.rgb(91, 106, 110));
+        summary.setLineSpacing(dp(2), 1.0f);
+        summary.setPadding(dp(12), dp(12), dp(12), dp(12));
+        summary.setBackground(inputBackground());
+        content.addView(summary, matchWrap(0, 12, 0, 0));
+
+        LinearLayout actionBar = new LinearLayout(this);
+        actionBar.setOrientation(LinearLayout.HORIZONTAL);
+        actionBar.setPadding(0, dp(14), 0, 0);
+
+        Button cancel = actionButton("取消", false);
+        Button save = actionButton("保存并应用", true);
+        actionBar.addView(cancel, rowButtonParams(0, dp(6)));
+        actionBar.addView(save, rowButtonParams(dp(6), 0));
+        content.addView(actionBar, matchWrap(0, 0, 0, 0));
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setView(scroll)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("保存", null)
                 .create();
         dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(23, 107, 135));
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(91, 106, 110));
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                    String value = token.getText().toString().trim();
-                    if (value.length() < 8) {
-                        Toast.makeText(this, "密码至少需要 8 位", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    Config.setToken(this, value);
-                    Config.setFrpConfig(this, new Config.FrpConfig(
-                            publicUrl.getText().toString(),
-                            serverAddr.getText().toString(),
-                            serverPort.getText().toString(),
-                            authToken.getText().toString(),
-                            remotePort.getText().toString()
-                    ));
-                    AppLog.add(this, "config", "访问和 frp 配置已保存 remotePort=" + remotePort.getText().toString().trim());
-                    SmsSyncService.start(this);
-                    updateStatus();
-                    Toast.makeText(this, "访问和 frp 配置已保存", Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                });
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            }
+        });
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            String value = token.getText().toString().trim();
+            if (value.length() < 8) {
+                Toast.makeText(this, "密码至少需要 8 位", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Config.setToken(this, value);
+            Config.setFrpConfig(this, new Config.FrpConfig(
+                    publicUrl.getText().toString(),
+                    serverAddr.getText().toString(),
+                    serverPort.getText().toString(),
+                    authToken.getText().toString(),
+                    remotePort.getText().toString()
+            ));
+            AppLog.add(this, "config", "访问和 frp 配置已保存 remotePort=" + remotePort.getText().toString().trim());
+            FrpClient.restart(this, "配置已保存");
+            SmsSyncService.start(this);
+            updateStatus();
+            Toast.makeText(this, "访问和 frp 配置已保存", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
         });
         dialog.show();
     }
@@ -273,7 +330,7 @@ public class MainActivity extends Activity {
     private LinearLayout settingCard(String title, String subtitle) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
         card.setBackground(cardBackground());
 
         TextView titleView = new TextView(this);
@@ -320,11 +377,57 @@ public class MainActivity extends Activity {
         return item;
     }
 
+    private LinearLayout settingPairRow(String titleLeft, String helperLeft, EditText left,
+                                        String titleRight, String helperRight, EditText right) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        rightParams.leftMargin = dp(8);
+
+        row.addView(settingItem(titleLeft, helperLeft, left), columnParams);
+        row.addView(settingItem(titleRight, helperRight, right), rightParams);
+        return row;
+    }
+
+    private TextView infoChip(String text) {
+        TextView chip = new TextView(this);
+        chip.setText(text);
+        chip.setTextSize(12);
+        chip.setTextColor(Color.WHITE);
+        chip.setPadding(dp(10), dp(5), dp(10), dp(5));
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setCornerRadius(dp(999));
+        drawable.setColor(Color.argb(48, 255, 255, 255));
+        drawable.setStroke(dp(1), Color.argb(70, 255, 255, 255));
+        chip.setBackground(drawable);
+        return chip;
+    }
+
     private GradientDrawable inputBackground() {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(Color.argb(235, 255, 255, 255));
         drawable.setCornerRadius(dp(12));
         drawable.setStroke(dp(1), Color.argb(170, 208, 216, 217));
+        return drawable;
+    }
+
+    private GradientDrawable dialogBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.rgb(241, 246, 245));
+        drawable.setCornerRadius(dp(22));
+        return drawable;
+    }
+
+    private GradientDrawable heroBackground() {
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(23, 107, 135), Color.rgb(78, 171, 197)}
+        );
+        drawable.setCornerRadius(dp(18));
         return drawable;
     }
 
@@ -340,22 +443,92 @@ public class MainActivity extends Activity {
     }
 
     private void showLogsDialog() {
-        TextView content = new TextView(this);
-        content.setText(AppLog.recent(this));
-        content.setTextSize(12);
-        content.setTextColor(Color.rgb(35, 48, 51));
-        content.setPadding(dp(8), dp(8), dp(8), dp(8));
-        content.setTextIsSelectable(true);
+        showLogsDialog(0);
+    }
+
+    private void showLogsDialog(int page) {
+        JSONObject snapshot = AppLog.snapshot(this);
+        JSONArray entries = snapshot.optJSONArray("entries");
+        int total = entries == null ? 0 : entries.length();
+        int pages = Math.max((int) Math.ceil(total / (double) LOG_PAGE_SIZE), 1);
+        int currentPage = Math.max(0, Math.min(page, pages - 1));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        TextView summary = new TextView(this);
+        summary.setText("最新日志优先显示 · 第 " + (currentPage + 1) + " / " + pages + " 页 · 共 " + total + " 条");
+        summary.setTextSize(12);
+        summary.setTextColor(Color.rgb(91, 106, 110));
+        content.addView(summary, matchWrap(0, 0, 0, 10));
+
+        TextView body = new TextView(this);
+        body.setText(logPageText(entries, currentPage));
+        body.setTextSize(12);
+        body.setTextColor(Color.rgb(35, 48, 51));
+        body.setPadding(dp(10), dp(10), dp(10), dp(10));
+        body.setBackground(inputBackground());
+        body.setTextIsSelectable(true);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.addView(content);
+        scroll.addView(body);
+        content.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(420)
+        ));
 
-        new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("运行日志")
-                .setView(scroll)
+                .setView(content)
                 .setNegativeButton("关闭", null)
-                .setPositiveButton("刷新", (dialog, which) -> showLogsDialog())
-                .show();
+                .setNeutralButton(currentPage > 0 ? "上一页" : "刷新", null)
+                .setPositiveButton(currentPage < pages - 1 ? "下一页" : "刷新", null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(91, 106, 110));
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(Color.rgb(23, 107, 135));
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(23, 107, 135));
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                dialog.dismiss();
+                if (currentPage > 0) {
+                    showLogsDialog(currentPage - 1);
+                } else {
+                    showLogsDialog(currentPage);
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                dialog.dismiss();
+                if (currentPage < pages - 1) {
+                    showLogsDialog(currentPage + 1);
+                } else {
+                    showLogsDialog(currentPage);
+                }
+            });
+        });
+        dialog.show();
+    }
+
+    private String logPageText(JSONArray entries, int page) {
+        if (entries == null || entries.length() == 0) return "暂无日志";
+        StringBuilder builder = new StringBuilder();
+        int start = Math.max(entries.length() - 1 - page * LOG_PAGE_SIZE, 0);
+        int end = Math.max(start - LOG_PAGE_SIZE + 1, 0);
+        for (int i = start; i >= end; i--) {
+            JSONObject entry = entries.optJSONObject(i);
+            if (entry == null) continue;
+            if (builder.length() > 0) builder.append("\n\n");
+            String time = entry.optString("time", "");
+            String type = entry.optString("type", "event");
+            String detail = entry.optString("detail", entry.optString("line", ""));
+            builder.append(time.isEmpty() ? "未知时间" : time)
+                    .append("  ")
+                    .append(type.isEmpty() ? "event" : type);
+            if (!detail.trim().isEmpty()) {
+                builder.append("\n").append(detail);
+            }
+        }
+        return builder.length() == 0 ? "暂无日志" : builder.toString();
     }
 
     private boolean hasSmsPermissions() {
@@ -378,6 +551,7 @@ public class MainActivity extends Activity {
                 + "\n网页服务：打开软件后自动启动"
                 + "\n发送桥：" + bridgeStatusText()
                 + "\nfrp 配置：" + frpStatus
+                + "\nfrp 隧道：" + frpTunnelStatusText()
                 + "\n网页端口：8787"
                 + "\n本地记录：" + LocalMessageStore.list(this, 500).length() + " 条"
                 + "\n公开入口：" + publicUrl);
@@ -415,6 +589,22 @@ public class MainActivity extends Activity {
         if (!SmsSendService.requiresShellBridge()) return "不需要";
         if (!bridgeChecked) return "正在检查";
         return bridgeAvailable ? "已连接，可以发送短信" : "未启动，发送短信会失败";
+    }
+
+    private String frpTunnelStatusText() {
+        try {
+            JSONObject frp = FrpClient.snapshot(this);
+            if (!frp.optBoolean("supported", false)) return "当前设备架构不支持";
+            if (!frp.optBoolean("enabled", false)) return frp.optString("message", "未配置");
+            if (frp.optBoolean("running", false)) {
+                String dns = frp.optString("dnsServer", "");
+                return "运行中" + (dns.isEmpty() ? "" : "，DNS " + dns);
+            }
+            String error = frp.optString("lastError", "");
+            return error.isEmpty() ? "未运行" : "未运行，" + error;
+        } catch (Exception ignored) {
+            return "状态读取失败";
+        }
     }
 
     private void refreshBridgeStatus() {

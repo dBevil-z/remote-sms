@@ -106,6 +106,7 @@ final class EmbeddedHttpServer {
                 if ("content-length".equals(key)) contentLength = Integer.parseInt(value);
             }
             String body = new String(readExact(input, contentLength), StandardCharsets.UTF_8);
+            rememberPublicUrl(headers, target);
 
             if (target.startsWith("/api/messages")) {
                 if (!authorized(headers, target)) {
@@ -211,6 +212,8 @@ final class EmbeddedHttpServer {
                     ));
                     Config.FrpConfig updated = Config.frpConfig(context);
                     AppLog.add(context, "config", "网页配置已更新 remotePort=" + updated.remotePort);
+                    FrpClient.restart(context, "网页配置更新");
+                    SmsSyncService.requestHealthCheck(context);
                 }
                 JSONObject response = Config.configJson(context);
                 response.put("deviceId", Config.deviceId(context));
@@ -269,6 +272,21 @@ final class EmbeddedHttpServer {
         if (("Bearer " + token).equals(auth)) return true;
         String queryToken = query(target).get("token");
         return token.equals(queryToken);
+    }
+
+    private void rememberPublicUrl(Map<String, String> headers, String target) {
+        try {
+            if (!authorized(headers, target)) return;
+            String host = headers.get("host");
+            if (host == null || host.trim().isEmpty()) return;
+            String forwardedProto = headers.get("x-forwarded-proto");
+            String proto = forwardedProto == null || forwardedProto.trim().isEmpty() ? "http" : forwardedProto.split(",")[0].trim();
+            String url = proto + "://" + host.trim();
+            if (Config.rememberPublicUrl(context, url)) {
+                AppLog.add(context, "frp", "已自动记录公网入口 " + url);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static int parseInt(String value, int fallback) {

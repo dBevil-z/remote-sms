@@ -9,6 +9,7 @@ import android.net.NetworkInfo;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Environment;
+import android.os.PowerManager;
 import android.os.StatFs;
 import android.os.SystemClock;
 
@@ -25,7 +26,7 @@ final class DeviceStatus {
         json.put("memory", memory(context));
         json.put("storage", storage());
         json.put("network", network(context));
-        json.put("services", services());
+        json.put("services", services(context));
         json.put("sms", sms(context));
         json.put("sampledAt", System.currentTimeMillis());
         return json;
@@ -103,11 +104,14 @@ final class DeviceStatus {
         return json;
     }
 
-    private static JSONObject services() throws Exception {
+    private static JSONObject services(Context context) throws Exception {
         JSONObject json = new JSONObject();
         json.put("webPort", 8787);
         json.put("sendBridge", SmsSendService.isShellBridgeAvailable());
         json.put("requiresSendBridge", SmsSendService.requiresShellBridge());
+        json.put("batteryOptimizationsIgnored", ignoresBatteryOptimizations(context));
+        json.put("service", SmsSyncService.stateSnapshot());
+        json.put("frpTunnel", FrpClient.snapshot(context));
         return json;
     }
 
@@ -121,5 +125,15 @@ final class DeviceStatus {
     private static int percent(long used, long total) {
         if (total <= 0) return 0;
         return Math.max(0, Math.min(100, Math.round(used * 100f / total)));
+    }
+
+    private static boolean ignoresBatteryOptimizations(Context context) {
+        if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false;
+        try {
+            PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            return powerManager != null && powerManager.isIgnoringBatteryOptimizations(context.getPackageName());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

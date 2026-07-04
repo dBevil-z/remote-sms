@@ -6,6 +6,7 @@ import android.provider.Settings;
 
 import org.json.JSONObject;
 
+import java.util.Locale;
 import java.util.UUID;
 
 final class Config {
@@ -60,6 +61,16 @@ final class Config {
                 .apply();
     }
 
+    static boolean rememberPublicUrl(Context context, String publicUrl) {
+        String value = clean(publicUrl);
+        if (value.isEmpty() || isLocalUrl(value)) return false;
+        SharedPreferences prefs = prefs(context);
+        String current = clean(prefs.getString(KEY_PUBLIC_URL, ""));
+        if (value.equals(current)) return false;
+        prefs.edit().putString(KEY_PUBLIC_URL, value).apply();
+        return true;
+    }
+
     static JSONObject configJson(Context context) throws Exception {
         FrpConfig frp = frpConfig(context);
         JSONObject json = new JSONObject();
@@ -77,6 +88,16 @@ final class Config {
 
     private static String clean(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static boolean isLocalUrl(String value) {
+        String lower = value.toLowerCase(Locale.US);
+        return lower.contains("://127.")
+                || lower.contains("://localhost")
+                || lower.contains("://0.0.0.0")
+                || lower.contains("://10.")
+                || lower.contains("://192.168.")
+                || lower.matches(".*://172\\.(1[6-9]|2[0-9]|3[0-1])\\..*");
     }
 
     static final class FrpConfig {

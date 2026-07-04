@@ -21,6 +21,8 @@ import android.os.Looper;
 import android.provider.Telephony;
 import android.util.Log;
 
+import org.json.JSONObject;
+
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
@@ -33,12 +35,26 @@ public class SmsSyncService extends Service {
     private static final long POLL_INTERVAL_MS = 10 * 60_000;
     private static final long WATCHDOG_INTERVAL_MS = 30 * 60_000;
     private static final long FRP_CHECK_INTERVAL_MS = 15 * 60_000;
+    private static final long WATCHDOG_STUCK_MS = 2 * 60_000;
     static final String ACTION_WATCHDOG = "dev.dbevil.remotesms.WATCHDOG";
     static final String ACTION_SMS_RECEIVED_CHECK = "dev.dbevil.remotesms.SMS_RECEIVED_CHECK";
+    static final String ACTION_FORCE_WATCHDOG = "dev.dbevil.remotesms.FORCE_WATCHDOG";
+    private static volatile long serviceStartedAt;
+    private static volatile long lastWatchdogAt;
+    private static volatile boolean lastWatchdogImmediate;
+    private static volatile Boolean networkConnectedState;
+    private static volatile Boolean localWebReachable;
+    private static volatile Boolean publicReachable;
+    private static volatile long lastLocalCheckAt;
+    private static volatile long lastPublicCheckAt;
+    private static volatile long lastPublicOkAt;
+    private static volatile String localWebError = "";
+    private static volatile String publicError = "";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService watchdogExecutor = Executors.newSingleThreadExecutor();
     private volatile boolean watchdogRunning;
+    private volatile long watchdogStartedAt;
     private Boolean lastNetworkOk;
     private Boolean lastLocalWebOk;
     private Boolean lastFrpOk;
@@ -62,6 +78,12 @@ public class SmsSyncService extends Service {
     static void startAfterSms(Context context) {
         Intent intent = new Intent(context, SmsSyncService.class);
         intent.setAction(ACTION_SMS_RECEIVED_CHECK);
+        start(context, intent);
+    }
+
+    static void requestHealthCheck(Context context) {
+        Intent intent = new Intent(context, SmsSyncService.class);
+        intent.setAction(ACTION_FORCE_WATCHDOG);
         start(context, intent);
     }
 
@@ -99,7 +121,9 @@ public class SmsSyncService extends Service {
     public void onCreate() {
         super.onCreate();
         EmbeddedHttpServer.start(this);
+        FrpClient.ensureRunning(this);
         scheduleWatchdog(this);
+        serviceStartedAt = System.currentTimeMillis();
         AppLog.add(this, "service", "短信服务启动，Web 端口 8787");
         startForeground(NOTIFICATION_ID, notification());
         handler.post(poll);
@@ -108,12 +132,18 @@ public class SmsSyncService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         scheduleWatchdog(this);
-        boolean fromSms = intent != null && ACTION_SMS_RECEIVED_CHECK.equals(intent.getAction());
+        String action = intent == null ? "" : intent.getAction();
+        boolean fromSms = ACTION_SMS_RECEIVED_CHECK.equals(action);
+        boolean forceWatchdog = ACTION_FORCE_WATCHDOG.equals(action);
         if (fromSms) {
             AppLog.add(this, "watchdog", "收到短信后触发服务健康检查");
         }
-        requestWatchdog(fromSms);
-        if (!fromSms) {
+        if (forceWatchdog) {
+            AppLog.add(this, "watchdog", "配置更新后触发服务健康检查");
+        }
+        FrpClient.ensureRunning(this);
+        requestWatchdog(fromSms || forceWatchdog);
+        if (!fromSms && !forceWatchdog) {
             syncRecentInbox();
         }
         return START_STICKY;
@@ -166,8 +196,13 @@ public class SmsSyncService extends Service {
     }
 
     private void requestWatchdog(boolean immediate) {
-        if (watchdogRunning) return;
+        long now = System.currentTimeMillis();
+        if (watchdogRunning && now - watchdogStartedAt <= WATCHDOG_STUCK_MS) return;
+        if (watchdogRunning) {
+            AppLog.add(this, "watchdog", "上一次巡检超时，强制开始新一轮");
+        }
         watchdogRunning = true;
+        watchdogStartedAt = now;
         watchdogExecutor.execute(new Runnable() {
             @Override
             public void run() {
@@ -175,6 +210,7 @@ public class SmsSyncService extends Service {
                     runWatchdog(immediate);
                 } finally {
                     watchdogRunning = false;
+                    watchdogStartedAt = 0;
                 }
             }
         });
@@ -182,18 +218,27 @@ public class SmsSyncService extends Service {
 
     private void runWatchdog(boolean immediate) {
         EmbeddedHttpServer.start(this);
+        FrpClient.ensureRunning(this);
+        lastWatchdogAt = System.currentTimeMillis();
+        lastWatchdogImmediate = immediate;
         boolean networkOk = isNetworkConnected();
+        networkConnectedState = networkOk;
         if (lastNetworkOk == null || lastNetworkOk != networkOk) {
             AppLog.add(this, "watchdog", networkOk ? "网络已连接" : "网络不可用，frp 入口可能无法访问");
             lastNetworkOk = networkOk;
         }
 
-        boolean localWebOk = checkHttpWithRetries("http://127.0.0.1:8787/health", 1500, 3, 350);
+        CheckResult localResult = checkHttpWithRetries("http://127.0.0.1:8787/health", 1500, 3, 350);
+        boolean localWebOk = localResult.ok;
         if (!localWebOk) {
             AppLog.add(this, "watchdog", "本机 Web 健康检查失败，尝试重启 8787 服务");
             EmbeddedHttpServer.restart(this);
-            localWebOk = checkHttpWithRetries("http://127.0.0.1:8787/health", 1800, 3, 500);
+            localResult = checkHttpWithRetries("http://127.0.0.1:8787/health", 1800, 3, 500);
+            localWebOk = localResult.ok;
         }
+        lastLocalCheckAt = System.currentTimeMillis();
+        localWebReachable = localWebOk;
+        localWebError = localWebOk ? "" : localResult.error;
         if (lastLocalWebOk == null || lastLocalWebOk != localWebOk) {
             AppLog.add(this, "watchdog", localWebOk ? "本机 Web 服务正常" : "本机 Web 服务仍不可用");
             lastLocalWebOk = localWebOk;
@@ -210,7 +255,7 @@ public class SmsSyncService extends Service {
         Config.FrpConfig frp = Config.frpConfig(this);
         if (frp.publicUrl.isEmpty()) {
             if (!frpMissingLogged) {
-                AppLog.add(this, "frp", "未配置公网入口，跳过 frp 健康检查");
+                AppLog.add(this, "frp", "未配置公网入口，无法检测远程访问是否正常");
                 frpMissingLogged = true;
             }
             lastFrpOk = null;
@@ -218,11 +263,17 @@ public class SmsSyncService extends Service {
         }
         frpMissingLogged = false;
         String healthUrl = healthUrl(frp.publicUrl);
-        boolean ok = checkHttp(healthUrl, 4500);
+        CheckResult result = checkHttpResult(healthUrl, 4500);
+        boolean ok = result.ok;
+        lastPublicCheckAt = System.currentTimeMillis();
+        publicReachable = ok;
+        publicError = ok ? "" : result.error;
+        if (ok) lastPublicOkAt = lastPublicCheckAt;
         if (lastFrpOk == null || lastFrpOk != ok) {
             AppLog.add(this, "frp", ok
-                    ? "公网入口已恢复 " + safeUrl(frp.publicUrl)
-                    : "公网入口检测失败，等待下次重试 " + safeUrl(frp.publicUrl));
+                    ? "公网入口可访问 " + safeUrl(frp.publicUrl)
+                    : "公网入口检测失败，远程可能连不上 " + safeUrl(frp.publicUrl)
+                    + (result.error.isEmpty() ? "" : "，原因：" + result.error));
             lastFrpOk = ok;
         }
     }
@@ -237,7 +288,23 @@ public class SmsSyncService extends Service {
         }
     }
 
-    private boolean checkHttp(String url, int timeoutMs) {
+    static JSONObject stateSnapshot() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("serviceStartedAt", serviceStartedAt > 0 ? serviceStartedAt : JSONObject.NULL);
+        json.put("lastWatchdogAt", lastWatchdogAt > 0 ? lastWatchdogAt : JSONObject.NULL);
+        json.put("lastWatchdogImmediate", lastWatchdogImmediate);
+        json.put("networkConnected", networkConnectedState == null ? JSONObject.NULL : networkConnectedState);
+        json.put("localWebReachable", localWebReachable == null ? JSONObject.NULL : localWebReachable);
+        json.put("publicReachable", publicReachable == null ? JSONObject.NULL : publicReachable);
+        json.put("lastLocalCheckAt", lastLocalCheckAt > 0 ? lastLocalCheckAt : JSONObject.NULL);
+        json.put("lastPublicCheckAt", lastPublicCheckAt > 0 ? lastPublicCheckAt : JSONObject.NULL);
+        json.put("lastPublicOkAt", lastPublicOkAt > 0 ? lastPublicOkAt : JSONObject.NULL);
+        json.put("localWebError", localWebError == null ? "" : localWebError);
+        json.put("publicError", publicError == null ? "" : publicError);
+        return json;
+    }
+
+    private CheckResult checkHttpResult(String url, int timeoutMs) {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
@@ -245,21 +312,33 @@ public class SmsSyncService extends Service {
             connection.setReadTimeout(timeoutMs);
             connection.setRequestMethod("GET");
             int status = connection.getResponseCode();
-            return status >= 200 && status < 300;
+            return status >= 200 && status < 300
+                    ? CheckResult.ok()
+                    : CheckResult.fail("HTTP " + status);
         } catch (Exception error) {
             Log.w(TAG, "health check failed " + url, error);
-            return false;
+            return CheckResult.fail(describeError(error));
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
-    private boolean checkHttpWithRetries(String url, int timeoutMs, int attempts, long delayMs) {
+    private CheckResult checkHttpWithRetries(String url, int timeoutMs, int attempts, long delayMs) {
+        CheckResult last = CheckResult.fail("未开始检测");
         for (int i = 0; i < attempts; i++) {
-            if (checkHttp(url, timeoutMs)) return true;
+            last = checkHttpResult(url, timeoutMs);
+            if (last.ok) return last;
             sleep(delayMs);
         }
-        return false;
+        return last;
+    }
+
+    private String describeError(Exception error) {
+        String name = error.getClass().getSimpleName();
+        String detail = error.getMessage();
+        if (detail == null || detail.trim().isEmpty()) return name;
+        String compact = detail.replace('\n', ' ').replace('\r', ' ').trim();
+        return name + ": " + compact;
     }
 
     private void sleep(long delayMs) {
@@ -326,6 +405,24 @@ public class SmsSyncService extends Service {
         if (newest > lastDate) {
             Config.prefs(this).edit().putLong(Config.KEY_LAST_SMS_DATE, newest).apply();
             AppLog.add(this, "sync", "收件箱同步完成，最新时间 " + newest);
+        }
+    }
+
+    private static final class CheckResult {
+        final boolean ok;
+        final String error;
+
+        private CheckResult(boolean ok, String error) {
+            this.ok = ok;
+            this.error = error == null ? "" : error;
+        }
+
+        static CheckResult ok() {
+            return new CheckResult(true, "");
+        }
+
+        static CheckResult fail(String error) {
+            return new CheckResult(false, error);
         }
     }
 }
