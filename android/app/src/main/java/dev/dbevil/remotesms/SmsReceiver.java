@@ -44,7 +44,10 @@ public class SmsReceiver extends BroadcastReceiver {
         if (body.length() == 0) return;
 
         SmsPayload payload = new SmsPayload(sender, body.toString(), receivedAt, simSlot);
-        LocalMessageStore.add(context.getApplicationContext(), payload);
+        boolean added = LocalMessageStore.add(context.getApplicationContext(), payload);
+        if (added) {
+            EmailForwarder.forwardIncoming(context.getApplicationContext(), payload, "receiver");
+        }
         AppLog.add(context, "sms", "收到短信，触发服务健康检查 sender=" + mask(sender));
         SmsSyncService.startAfterSms(context.getApplicationContext());
     }

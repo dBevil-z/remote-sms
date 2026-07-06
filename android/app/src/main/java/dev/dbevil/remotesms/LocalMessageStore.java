@@ -22,15 +22,15 @@ final class LocalMessageStore {
     private LocalMessageStore() {
     }
 
-    static synchronized void add(Context context, SmsPayload payload) {
+    static synchronized boolean add(Context context, SmsPayload payload) {
         try {
             List<JSONObject> messages = readObjects(context);
             Set<String> ids = new HashSet<>();
             for (JSONObject message : messages) {
                 ids.add(message.optString("id"));
             }
-            if (ids.contains(payload.id)) return;
-            if (hasDuplicateIncoming(messages, payload)) return;
+            if (ids.contains(payload.id)) return false;
+            if (hasDuplicateIncoming(messages, payload)) return false;
 
             JSONObject json = toJson(context, payload);
             json.put("direction", "incoming");
@@ -41,7 +41,9 @@ final class LocalMessageStore {
                 messages = new ArrayList<>(messages.subList(0, MAX_MESSAGES));
             }
             writeObjects(context, messages);
+            return true;
         } catch (Exception ignored) {
+            return false;
         }
     }
 

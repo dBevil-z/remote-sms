@@ -394,7 +394,10 @@ public class SmsSyncService extends Service {
                 String body = cursor.getString(bodyIndex);
                 long date = cursor.getLong(dateIndex);
                 if (date > newest) newest = date;
-                LocalMessageStore.add(this, new SmsPayload(sender, body, date, -1));
+                SmsPayload payload = new SmsPayload(sender, body, date, -1);
+                if (LocalMessageStore.add(this, payload)) {
+                    EmailForwarder.forwardIncoming(this, payload, "sync");
+                }
             }
         } catch (Exception error) {
             Log.w(TAG, "inbox backfill failed", error);

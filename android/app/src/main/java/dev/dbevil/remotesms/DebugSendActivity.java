@@ -13,7 +13,9 @@ public class DebugSendActivity extends Activity {
                 System.currentTimeMillis(),
                 -1
         );
-        LocalMessageStore.add(getApplicationContext(), payload);
+        if (LocalMessageStore.add(getApplicationContext(), payload)) {
+            EmailForwarder.forwardIncoming(getApplicationContext(), payload, "debug");
+        }
         finish();
     }
 }

@@ -134,8 +134,11 @@ public class MainActivity extends Activity {
                     System.currentTimeMillis(),
                     -1
             );
-            LocalMessageStore.add(getApplicationContext(), payload);
-            Toast.makeText(this, "测试短信已保存", Toast.LENGTH_SHORT).show();
+            boolean added = LocalMessageStore.add(getApplicationContext(), payload);
+            if (added) {
+                EmailForwarder.forwardIncoming(getApplicationContext(), payload, "manual-test");
+            }
+            Toast.makeText(this, added ? "测试短信已保存，并尝试转发邮件" : "测试短信重复，未重新写入", Toast.LENGTH_SHORT).show();
         });
         root.addView(test, matchWrap(0, 0, 0, 0));
 
@@ -189,6 +192,7 @@ public class MainActivity extends Activity {
 
     private void showConfigDialog() {
         Config.FrpConfig frp = Config.frpConfig(this);
+        Config.EmailConfig email = Config.emailConfig(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -236,6 +240,14 @@ public class MainActivity extends Activity {
         EditText remotePort = settingInput("映射到 8787 的公网端口", frp.remotePort, false);
         remotePort.setInputType(InputType.TYPE_CLASS_NUMBER);
         EditText authToken = settingInput("frp 认证 token，可留空", frp.authToken, true);
+        EditText smtpHost = settingInput("smtp.qq.com", email.smtpHost, false);
+        EditText smtpPort = settingInput("465 / 587 / 25", email.smtpPort, false);
+        smtpPort.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText smtpSecurity = settingInput("ssl / starttls / none", email.smtpSecurity, false);
+        EditText smtpUsername = settingInput("SMTP 用户名，可留空默认发件邮箱", email.smtpUsername, false);
+        EditText smtpPassword = settingInput("SMTP 密码或授权码", email.smtpPassword, true);
+        EditText senderEmail = settingInput("发件邮箱", email.senderEmail, false);
+        EditText recipientEmail = settingInput("收件邮箱", email.recipientEmail, false);
 
         LinearLayout authCard = settingCard("网页鉴权", "控制远程页面和 API 的访问");
         authCard.addView(settingItem("访问密码", "浏览器访问短信页面时使用，至少 8 位。", token), matchWrap(0, 0, 0, 0));
@@ -251,9 +263,24 @@ public class MainActivity extends Activity {
         frpCard.addView(settingItem("frp 认证 token", "如 frp 服务需要认证可填写。", authToken), matchWrap(0, 0, 0, 0));
         content.addView(frpCard, matchWrap(0, 0, 0, 0));
 
+        LinearLayout emailCard = settingCard("邮件转发", "收到短信后通过 SMTP 转发邮件，邮件正文保持和短信完全一致");
+        emailCard.addView(settingItem("SMTP 主机", "例如 smtp.qq.com、smtp.gmail.com。", smtpHost), matchWrap(0, 0, 0, 10));
+        emailCard.addView(settingPairRow(
+                "SMTP 端口", "SSL 常见 465，STARTTLS 常见 587。", smtpPort,
+                "安全方式", "填写 ssl、starttls 或 none。", smtpSecurity
+        ), matchWrap(0, 0, 0, 10));
+        emailCard.addView(settingItem("SMTP 用户名", "可留空，留空时默认使用发件邮箱。", smtpUsername), matchWrap(0, 0, 0, 10));
+        emailCard.addView(settingItem("SMTP 密码/授权码", "QQ 邮箱请填写 SMTP 授权码。", smtpPassword), matchWrap(0, 0, 0, 10));
+        emailCard.addView(settingPairRow(
+                "发件邮箱", "用于邮件 From。", senderEmail,
+                "收件邮箱", "短信要转发到的邮箱。", recipientEmail
+        ), matchWrap(0, 0, 0, 0));
+        content.addView(emailCard, matchWrap(0, 10, 0, 0));
+
         TextView summary = new TextView(this);
         summary.setText("当前公开入口：" + (frp.publicUrl.isEmpty() ? "未配置" : frp.publicUrl)
                 + "\n目标映射：127.0.0.1:8787 -> " + (frp.remotePort.isEmpty() ? "未配置端口" : frp.remotePort)
+                + "\n邮件转发：" + (email.isConfigured() ? (email.senderEmail + " -> " + email.recipientEmail) : "未完整配置")
                 + "\n保存后会自动刷新网页服务和 frp 隧道状态。");
         summary.setTextSize(12);
         summary.setTextColor(Color.rgb(91, 106, 110));
@@ -298,11 +325,22 @@ public class MainActivity extends Activity {
                     authToken.getText().toString(),
                     remotePort.getText().toString()
             ));
-            AppLog.add(this, "config", "访问和 frp 配置已保存 remotePort=" + remotePort.getText().toString().trim());
+            Config.setEmailConfig(this, new Config.EmailConfig(
+                    smtpHost.getText().toString(),
+                    smtpPort.getText().toString(),
+                    smtpSecurity.getText().toString(),
+                    smtpUsername.getText().toString(),
+                    smtpPassword.getText().toString(),
+                    senderEmail.getText().toString(),
+                    recipientEmail.getText().toString()
+            ));
+            Config.EmailConfig updatedEmail = Config.emailConfig(this);
+            AppLog.add(this, "config", "访问、frp 和邮件配置已保存 email="
+                    + (updatedEmail.isConfigured() ? updatedEmail.senderEmail + "->" + updatedEmail.recipientEmail : "未完整配置"));
             FrpClient.restart(this, "配置已保存");
             SmsSyncService.start(this);
             updateStatus();
-            Toast.makeText(this, "访问和 frp 配置已保存", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "访问、frp 和邮件配置已保存", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
         dialog.show();
@@ -541,15 +579,20 @@ public class MainActivity extends Activity {
 
     private void updateStatus() {
         Config.FrpConfig frp = Config.frpConfig(this);
+        Config.EmailConfig email = Config.emailConfig(this);
         String publicUrl = frp.publicUrl.isEmpty() ? "未配置" : frp.publicUrl;
         String frpStatus = frp.serverAddr.isEmpty()
                 ? "未配置"
                 : frp.serverAddr + (frp.remotePort.isEmpty() ? "" : ":" + frp.remotePort);
+        String emailStatus = email.isConfigured()
+                ? email.senderEmail + " -> " + email.recipientEmail + " (" + email.smtpHost + ":" + email.portValue() + ", " + email.smtpSecurity + ")"
+                : "未配置完整";
         status.setText("设备 ID：" + Config.deviceId(this)
                 + "\n短信权限：" + (hasSmsPermissions() ? "已授权，可以接收短信" : "未授权，请先授权")
                 + "\n默认短信应用：" + (isDefaultSmsApp() ? "是" : "否，发送可能被系统拦截")
                 + "\n网页服务：打开软件后自动启动"
                 + "\n发送桥：" + bridgeStatusText()
+                + "\n邮件转发：" + emailStatus
                 + "\nfrp 配置：" + frpStatus
                 + "\nfrp 隧道：" + frpTunnelStatusText()
                 + "\n网页端口：8787"
