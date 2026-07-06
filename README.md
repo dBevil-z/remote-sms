@@ -28,11 +28,13 @@ Useful when you want to:
 | Device dashboard | View battery, memory, storage, network, uptime, SMS count, SIM information, and send-bridge status. |
 | Search and filters | Search by number, note, message body, send status, direction, SIM card, or verification-code-only view. |
 | Verification-code helper | Automatically highlights likely verification codes and provides one-tap copy. |
+| Configurable email forwarding | Forward incoming SMS to any mailbox through your own SMTP server, with sender, recipient, host, port, security mode, username, and password all configurable at runtime. |
 | Notes and exports | Add local notes for frequent numbers, and export filtered messages as CSV or JSON. |
 | Health alerts | Shows low battery, high storage usage, network loss, memory pressure, and send-bridge issues. |
 | Mobile-friendly UI | Compact layout works well from another phone. |
 | Password-protected access | Protected APIs require a Bearer Token, configurable from the app or web settings. |
-| No hardcoded tunnel secrets | frp URL, server address, ports, auth token, and web password are configured at runtime. |
+| Email delivery logs | SMTP send success and failure are written into the app log and visible from the web log view. |
+| No hardcoded tunnel or mail secrets | frp URL, server address, ports, auth token, web password, and SMTP settings are configured at runtime. |
 | Outgoing message history | Sent messages are recorded locally with sending, sent, delivered, or failed status. |
 | Smartisan compatibility path | Includes a local shell bridge for Smartisan Pro 2S, where app-level `SmsManager` may be silently blocked. |
 | Self-hosted by design | SMS data stays on the phone, and you control the access path. |
@@ -70,9 +72,10 @@ docs/assets/             README screenshots
 1. Install and open the Android app on the phone.
 2. The app starts an embedded web server on port `8787`.
 3. Incoming SMS messages are saved locally on the phone.
-4. A trusted browser connects to the phone and reads messages after password authentication.
-5. To send SMS, choose a SIM card in the web UI, enter the recipient and message body, then submit.
-6. The web UI also shows device health and service status.
+4. If SMTP is configured, each newly received SMS can also be forwarded by email with the original SMS body preserved.
+5. A trusted browser connects to the phone and reads messages after password authentication.
+6. To send SMS, choose a SIM card in the web UI, enter the recipient and message body, then submit.
+7. The web UI also shows device health, service status, and app logs including email delivery results.
 
 ## Quick Start
 
@@ -98,7 +101,7 @@ You can also publish it through your own frp endpoint, public domain, reverse pr
 
 ## Configuration
 
-No frp address, frp token, or web access password is hardcoded in the app.
+No frp address, frp token, web access password, or SMTP credential is hardcoded in the app.
 
 Open the Android app and use **访问设置** to configure:
 
@@ -108,6 +111,15 @@ Open the Android app and use **访问设置** to configure:
 - frp server port
 - frp remote port
 - frp auth token
+- SMTP host
+- SMTP port
+- SMTP security mode (`ssl`, `starttls`, or `none`)
+- SMTP username
+- SMTP password or app-specific authorization code
+- Sender email address
+- Recipient email address
+
+Incoming SMS forwarding keeps the SMS body unchanged. Email send success or failure is appended to the in-app log and can be reviewed from the web log page.
 
 The values are stored only in Android `SharedPreferences` on the phone.
 
@@ -168,6 +180,6 @@ Endpoints:
 - Do not expose port `8787` directly to the public internet without additional protection.
 - Use frp, a reverse proxy, HTTPS, access control, or VPN where appropriate.
 - Use a strong web access password.
-- Do not commit frp credentials or web passwords to Git.
+- Do not commit frp credentials, web passwords, SMTP usernames, or SMTP passwords to Git.
 - For important verification-code accounts, restrict access to trusted devices and networks.
 - Keep the phone charged, connected, and within carrier SMS limits.
