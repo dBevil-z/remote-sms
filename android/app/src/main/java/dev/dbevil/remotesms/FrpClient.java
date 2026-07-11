@@ -4,6 +4,8 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Build;
 
 import org.json.JSONObject;
@@ -20,19 +22,35 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 final class FrpClient {
     private static final String ASSET_ARM64 = "bin/frpc-arm64-v8a";
     private static final String FALLBACK_DNS = "114.114.114.114";
-    private static final long RESTART_DELAY_MS = 5_000L;
+    private static final long NETWORK_REFRESH_DELAY_MS = 1_000L;
     private static final int LOCAL_PORT = 8787;
     private static final String LOG_TAG = "frp";
 
     private static FrpClient instance;
 
     private final Context context;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "remote-sms-frp-scheduler");
+        thread.setDaemon(true);
+        return thread;
+    });
     private Process process;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private ScheduledFuture<?> pendingExitRetry;
+    private ScheduledFuture<?> pendingNetworkRefresh;
     private boolean stopRequested;
+    private int consecutiveExitFailures;
+    private String lastTransientErrorKey = "";
+    private long lastTransientLogAt;
+    private Boolean networkAvailableState;
     private String activeSignature = "";
     private String activeProxyName = "";
     private String activeDnsServer = "";
@@ -49,6 +67,7 @@ final class FrpClient {
 
     private FrpClient(Context context) {
         this.context = context.getApplicationContext();
+        registerNetworkMonitoring();
     }
 
     static synchronized void ensureRunning(Context context) {
@@ -87,37 +106,17 @@ final class FrpClient {
         }
         try {
             File binary = ensureBinary();
+            File configFile = writeRuntimeConfig(binary.getParentFile(), runtime);
             List<String> command = new ArrayList<>();
             command.add(binary.getAbsolutePath());
-            command.add("tcp");
-            command.add("-s");
-            command.add(runtime.serverAddr);
-            command.add("-P");
-            command.add(String.valueOf(runtime.serverPort));
-            command.add("-n");
-            command.add(runtime.proxyName);
-            command.add("-i");
-            command.add("127.0.0.1");
-            command.add("-l");
-            command.add(String.valueOf(LOCAL_PORT));
-            command.add("-r");
-            command.add(String.valueOf(runtime.remotePort));
-            command.add("--dns-server");
-            command.add(runtime.dnsServer);
-            command.add("--log-file");
-            command.add("console");
-            command.add("--log-level");
-            command.add("info");
-            command.add("--disable-log-color");
-            if (!runtime.authToken.isEmpty()) {
-                command.add("-t");
-                command.add(runtime.authToken);
-            }
+            command.add("-c");
+            command.add(configFile.getAbsolutePath());
 
             ProcessBuilder builder = new ProcessBuilder(command);
             builder.directory(binary.getParentFile());
             builder.redirectErrorStream(true);
             stopRequested = false;
+            cancelExitRetry();
             process = builder.start();
             activeSignature = runtime.signature;
             activeProxyName = runtime.proxyName;
@@ -141,7 +140,12 @@ final class FrpClient {
 
     private void stopInternal(String reason) {
         stopRequested = true;
-        if (process == null) return;
+        cancelExitRetry();
+        if (process == null) {
+            activeSignature = "";
+            activeProxyName = "";
+            return;
+        }
         Process current = process;
         process = null;
         activeSignature = "";
@@ -162,23 +166,38 @@ final class FrpClient {
                 while ((line = bufferedReader.readLine()) != null) {
                     String clean = sanitizeLine(line);
                     if (clean.isEmpty()) continue;
+                    boolean writeLog = true;
                     synchronized (FrpClient.this) {
-                        if (current != process && process != null) return;
+                        if (current != process) return;
                         lastInfo = clean;
                         if (clean.contains("login to server success")) {
                             lastConnectedAt = System.currentTimeMillis();
                             lastError = "";
                             lastInfo = "frp 已连接，隧道运行中";
+                            clearTransientLogState();
                         } else if (clean.contains("start proxy success")) {
                             lastConnectedAt = System.currentTimeMillis();
                             lastError = "";
                             lastInfo = "frp 已连接，隧道运行中";
+                            consecutiveExitFailures = 0;
+                            clearTransientLogState();
                             requestFollowUpHealthCheck();
                         } else if (isErrorLine(clean)) {
                             lastError = clean;
+                            if (FrpRuntimeSupport.isTransientNetworkError(clean)) {
+                                String key = FrpRuntimeSupport.transientErrorKey(clean);
+                                long now = System.currentTimeMillis();
+                                writeLog = FrpRuntimeSupport.shouldLogTransient(
+                                        key, lastTransientErrorKey, lastTransientLogAt, now
+                                );
+                                if (writeLog) {
+                                    lastTransientErrorKey = key;
+                                    lastTransientLogAt = now;
+                                }
+                            }
                         }
                     }
-                    AppLog.add(context, LOG_TAG, clean);
+                    if (writeLog) AppLog.add(context, LOG_TAG, clean);
                 }
             } catch (Exception error) {
                 synchronized (FrpClient.this) {
@@ -202,12 +221,14 @@ final class FrpClient {
                 Thread.currentThread().interrupt();
             }
             boolean shouldRestart;
+            int failureCount;
             synchronized (FrpClient.this) {
-                if (current != process && process != null) return;
-                if (current == process) process = null;
+                if (current != process) return;
+                process = null;
                 lastExitAt = System.currentTimeMillis();
                 lastExitCode = exitCode;
                 shouldRestart = !stopRequested && desiredConfig().enabled;
+                failureCount = consecutiveExitFailures++;
                 if (exitCode != Integer.MIN_VALUE) {
                     lastInfo = "frp 进程退出";
                     if (lastError.isEmpty()) lastError = "frp 进程退出 code=" + exitCode;
@@ -215,19 +236,7 @@ final class FrpClient {
                 }
             }
             if (!shouldRestart) return;
-            try {
-                Thread.sleep(RESTART_DELAY_MS);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            synchronized (FrpClient.class) {
-                if (instance == null) return;
-                if (!instance.stopRequested) {
-                    AppLog.add(context, LOG_TAG, "frp 断开后自动重连");
-                    instance.ensureRunningInternal();
-                }
-            }
+            scheduleExitRetry(failureCount);
         }, "remote-sms-frp-exit");
         waiter.setDaemon(true);
         waiter.start();
@@ -297,6 +306,147 @@ final class FrpClient {
         }
         binaryPath = binary.getAbsolutePath();
         return binary;
+    }
+
+    private File writeRuntimeConfig(File directory, RuntimeConfig runtime) throws Exception {
+        File target = new File(directory, "frpc.toml");
+        File temporary = new File(directory, "frpc.toml.tmp");
+        String content = FrpRuntimeSupport.toml(
+                runtime.serverAddr,
+                runtime.serverPort,
+                runtime.remotePort,
+                runtime.authToken,
+                runtime.dnsServer,
+                runtime.proxyName,
+                LOCAL_PORT
+        );
+        try (FileOutputStream output = new FileOutputStream(temporary, false)) {
+            output.write(content.getBytes(StandardCharsets.UTF_8));
+            output.getFD().sync();
+        }
+        if (target.exists() && !target.delete()) {
+            throw new IllegalStateException("无法更新 frpc 配置文件");
+        }
+        if (!temporary.renameTo(target)) {
+            throw new IllegalStateException("无法启用新的 frpc 配置文件");
+        }
+        target.setReadable(false, false);
+        target.setWritable(false, false);
+        target.setReadable(true, true);
+        target.setWritable(true, true);
+        return target;
+    }
+
+    private void registerNetworkMonitoring() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) return;
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    scheduleNetworkRefresh("网络已恢复");
+                }
+
+                @Override
+                public void onLost(Network network) {
+                    scheduleNetworkRefresh("网络状态变化");
+                }
+
+                @Override
+                public void onLinkPropertiesChanged(Network network, LinkProperties linkProperties) {
+                    scheduleNetworkRefresh("网络 DNS 已更新");
+                }
+            };
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                manager.registerDefaultNetworkCallback(networkCallback);
+            } else {
+                NetworkRequest request = new NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build();
+                manager.registerNetworkCallback(request, networkCallback);
+            }
+        } catch (Exception error) {
+            AppLog.add(context, LOG_TAG, "注册网络变化监听失败：" + compactError(error));
+        }
+    }
+
+    private synchronized void scheduleNetworkRefresh(String reason) {
+        if (pendingNetworkRefresh != null) pendingNetworkRefresh.cancel(false);
+        pendingNetworkRefresh = scheduler.schedule(() -> {
+            synchronized (FrpClient.class) {
+                if (instance != FrpClient.this) return;
+                synchronized (FrpClient.this) {
+                    pendingNetworkRefresh = null;
+                }
+                refreshForNetwork(reason);
+            }
+        }, NETWORK_REFRESH_DELAY_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void refreshForNetwork(String reason) {
+        boolean networkAvailable = hasUsableNetwork();
+        boolean becameAvailable = networkAvailable && !Boolean.TRUE.equals(networkAvailableState);
+        boolean becameUnavailable = !networkAvailable && !Boolean.FALSE.equals(networkAvailableState);
+        networkAvailableState = networkAvailable;
+        if (!networkAvailable) {
+            lastInfo = "等待网络恢复";
+            if (becameUnavailable) AppLog.add(context, LOG_TAG, "网络不可用，frp 等待自动恢复");
+            return;
+        }
+
+        RuntimeConfig runtime = desiredConfig();
+        if (!runtime.enabled) return;
+        boolean processAlive = process != null && process.isAlive();
+        boolean dnsChanged = FrpRuntimeSupport.shouldRestartForNetwork(
+                activeDnsServer, runtime.dnsServer, true
+        );
+        if (processAlive && !dnsChanged) {
+            if (becameAvailable) AppLog.add(context, LOG_TAG, "网络已恢复，frp 连接继续运行");
+            return;
+        }
+
+        AppLog.add(context, LOG_TAG, reason + "，刷新 frp 域名解析");
+        if (processAlive) stopInternal("网络或 DNS 已变化");
+        ensureRunningInternal();
+    }
+
+    private boolean hasUsableNetwork() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false;
+            Network network = manager.getActiveNetwork();
+            NetworkCapabilities capabilities = network == null ? null : manager.getNetworkCapabilities(network);
+            return capabilities != null
+                    && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private synchronized void scheduleExitRetry(int failureCount) {
+        cancelExitRetry();
+        long delayMs = FrpRuntimeSupport.retryDelayMs(failureCount);
+        pendingExitRetry = scheduler.schedule(() -> {
+            synchronized (FrpClient.class) {
+                if (instance != FrpClient.this || stopRequested) return;
+                synchronized (FrpClient.this) {
+                    pendingExitRetry = null;
+                }
+                AppLog.add(context, LOG_TAG, "frp 进程退出后自动重连，等待 " + (delayMs / 1000) + " 秒");
+                ensureRunningInternal();
+            }
+        }, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void cancelExitRetry() {
+        if (pendingExitRetry == null) return;
+        pendingExitRetry.cancel(false);
+        pendingExitRetry = null;
+    }
+
+    private void clearTransientLogState() {
+        lastTransientErrorKey = "";
+        lastTransientLogAt = 0;
     }
 
     private boolean supportsCurrentAbi() {

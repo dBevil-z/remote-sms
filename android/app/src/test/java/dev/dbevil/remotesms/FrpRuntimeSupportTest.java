@@ -21,6 +21,9 @@ public class FrpRuntimeSupportTest {
 
         assertTrue(text.contains("serverAddr = \"frp.example.test\""));
         assertTrue(text.contains("loginFailExit = false"));
+        assertTrue(text.contains("log.to = \"console\""));
+        assertTrue(text.contains("log.level = \"info\""));
+        assertTrue(text.contains("log.disablePrintColor = true"));
         assertFalse(text.contains("resolvedServerIp"));
     }
 
@@ -46,5 +49,37 @@ public class FrpRuntimeSupportTest {
         assertTrue(FrpRuntimeSupport.shouldRestartForNetwork("192.0.2.53", "198.51.100.53", true));
         assertFalse(FrpRuntimeSupport.shouldRestartForNetwork("192.0.2.53", "", false));
         assertFalse(FrpRuntimeSupport.shouldRestartForNetwork("192.0.2.53", "192.0.2.53", true));
+    }
+
+    @Test
+    public void tomlEscapesSecretsAndNames() {
+        String text = FrpRuntimeSupport.toml(
+                "host",
+                7000,
+                65439,
+                "a\"b\\c\n",
+                "192.0.2.53",
+                "proxy\"name",
+                8787
+        );
+
+        assertTrue(text.contains("auth.token = \"a\\\"b\\\\c\\n\""));
+        assertTrue(text.contains("name = \"proxy\\\"name\""));
+    }
+
+    @Test
+    public void repeatedTransientLogIsRateLimited() {
+        assertTrue(FrpRuntimeSupport.shouldLogTransient(
+                "network is unreachable", "", 0, 1_000
+        ));
+        assertFalse(FrpRuntimeSupport.shouldLogTransient(
+                "network is unreachable", "network is unreachable", 1_000, 2_000
+        ));
+        assertTrue(FrpRuntimeSupport.shouldLogTransient(
+                "network is unreachable", "network is unreachable", 1_000, 301_000
+        ));
+        assertTrue(FrpRuntimeSupport.shouldLogTransient(
+                "no such host", "network is unreachable", 1_000, 2_000
+        ));
     }
 }

@@ -5,6 +5,7 @@ import java.util.Locale;
 final class FrpRuntimeSupport {
     private static final long BASE_RETRY_DELAY_MS = 5_000L;
     private static final long MAX_RETRY_DELAY_MS = 60_000L;
+    private static final long TRANSIENT_LOG_INTERVAL_MS = 5 * 60_000L;
 
     private FrpRuntimeSupport() {
     }
@@ -16,6 +17,9 @@ final class FrpRuntimeSupport {
         appendInt(text, "serverPort", serverPort);
         text.append("loginFailExit = false\n");
         if (!clean(dnsServer).isEmpty()) appendString(text, "dnsServer", dnsServer);
+        appendString(text, "log.to", "console");
+        appendString(text, "log.level", "info");
+        text.append("log.disablePrintColor = true\n");
         if (!clean(authToken).isEmpty()) {
             appendString(text, "auth.method", "token");
             appendString(text, "auth.token", authToken);
@@ -36,6 +40,7 @@ final class FrpRuntimeSupport {
                 || lower.contains("no route to host")
                 || lower.contains("no such host")
                 || lower.contains("temporary failure in name resolution")
+                || lower.contains("unable to resolve host")
                 || lower.contains("connection refused")
                 || lower.contains("connection reset")
                 || lower.contains("i/o timeout")
@@ -53,6 +58,32 @@ final class FrpRuntimeSupport {
         return !clean(currentDns).equals(clean(activeDns));
     }
 
+    static boolean shouldLogTransient(String errorKey, String lastErrorKey, long lastLoggedAt, long now) {
+        String current = clean(errorKey);
+        if (current.isEmpty()) return true;
+        return !current.equals(clean(lastErrorKey))
+                || lastLoggedAt <= 0
+                || now - lastLoggedAt >= TRANSIENT_LOG_INTERVAL_MS;
+    }
+
+    static String transientErrorKey(String line) {
+        String lower = clean(line).toLowerCase(Locale.US);
+        if (lower.contains("network is unreachable") || lower.contains("no route to host")) {
+            return "network-unreachable";
+        }
+        if (lower.contains("no such host")
+                || lower.contains("temporary failure in name resolution")
+                || lower.contains("unable to resolve host")) {
+            return "dns-resolution";
+        }
+        if (lower.contains("connection refused")) return "connection-refused";
+        if (lower.contains("connection reset")) return "connection-reset";
+        if (lower.contains("i/o timeout") || lower.contains("timed out") || lower.contains("timeout")) {
+            return "timeout";
+        }
+        return lower;
+    }
+
     private static void appendString(StringBuilder text, String key, String value) {
         text.append(key).append(" = \"").append(escapeToml(value)).append("\"\n");
     }
@@ -62,7 +93,7 @@ final class FrpRuntimeSupport {
     }
 
     private static String escapeToml(String value) {
-        return clean(value)
+        return (value == null ? "" : value)
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")
                 .replace("\r", "\\r")
