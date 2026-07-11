@@ -58,6 +58,16 @@ final class FrpRuntimeSupport {
         return !clean(currentDns).equals(clean(activeDns));
     }
 
+    static boolean isProcessAlive(Process process) {
+        if (process == null) return false;
+        try {
+            process.exitValue();
+            return false;
+        } catch (IllegalThreadStateException running) {
+            return true;
+        }
+    }
+
     static boolean shouldLogTransient(String errorKey, String lastErrorKey, long lastLoggedAt, long now) {
         String current = clean(errorKey);
         if (current.isEmpty()) return true;

@@ -2,6 +2,11 @@ package dev.dbevil.remotesms;
 
 import org.junit.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -81,5 +86,50 @@ public class FrpRuntimeSupportTest {
         assertTrue(FrpRuntimeSupport.shouldLogTransient(
                 "no such host", "network is unreachable", 1_000, 2_000
         ));
+    }
+
+    @Test
+    public void processStateCheckWorksBeforeApi26() {
+        assertTrue(FrpRuntimeSupport.isProcessAlive(new StubProcess(true)));
+        assertFalse(FrpRuntimeSupport.isProcessAlive(new StubProcess(false)));
+        assertFalse(FrpRuntimeSupport.isProcessAlive(null));
+    }
+
+    private static final class StubProcess extends Process {
+        private final boolean running;
+
+        StubProcess(boolean running) {
+            this.running = running;
+        }
+
+        @Override
+        public OutputStream getOutputStream() {
+            return new ByteArrayOutputStream();
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new ByteArrayInputStream(new byte[0]);
+        }
+
+        @Override
+        public InputStream getErrorStream() {
+            return new ByteArrayInputStream(new byte[0]);
+        }
+
+        @Override
+        public int waitFor() {
+            return 0;
+        }
+
+        @Override
+        public int exitValue() {
+            if (running) throw new IllegalThreadStateException("still running");
+            return 0;
+        }
+
+        @Override
+        public void destroy() {
+        }
     }
 }

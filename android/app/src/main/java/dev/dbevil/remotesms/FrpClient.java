@@ -98,10 +98,10 @@ final class FrpClient {
             stopInternal(runtime.message);
             return;
         }
-        if (process != null && process.isAlive() && runtime.signature.equals(activeSignature)) {
+        if (FrpRuntimeSupport.isProcessAlive(process) && runtime.signature.equals(activeSignature)) {
             return;
         }
-        if (process != null && process.isAlive()) {
+        if (FrpRuntimeSupport.isProcessAlive(process)) {
             stopInternal("配置已变更");
         }
         try {
@@ -247,7 +247,7 @@ final class FrpClient {
         JSONObject json = new JSONObject();
         json.put("supported", supportsCurrentAbi());
         json.put("enabled", runtime.enabled);
-        json.put("running", process != null && process.isAlive());
+        json.put("running", FrpRuntimeSupport.isProcessAlive(process));
         json.put("serverAddr", runtime.serverAddr);
         json.put("serverPort", runtime.serverPort > 0 ? runtime.serverPort : JSONObject.NULL);
         json.put("remotePort", runtime.remotePort > 0 ? runtime.remotePort : JSONObject.NULL);
@@ -396,7 +396,7 @@ final class FrpClient {
 
         RuntimeConfig runtime = desiredConfig();
         if (!runtime.enabled) return;
-        boolean processAlive = process != null && process.isAlive();
+        boolean processAlive = FrpRuntimeSupport.isProcessAlive(process);
         boolean dnsChanged = FrpRuntimeSupport.shouldRestartForNetwork(
                 activeDnsServer, runtime.dnsServer, true
         );
