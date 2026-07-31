@@ -1,6 +1,6 @@
 #!/system/bin/sh
 mkdir -p /data/local/tmp/sms-bridge
-for old_pid in $(pidof dalvikvm 2>/dev/null); do
+ps -A -o PID,ARGS 2>/dev/null | grep '[S]msBridge' | while read old_pid old_args; do
   kill "$old_pid" 2>/dev/null
 done
 nohup dalvikvm -cp /data/local/tmp/sms-bridge/sms-bridge.jar SmsBridge \

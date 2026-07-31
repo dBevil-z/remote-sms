@@ -30,7 +30,14 @@ import java.util.concurrent.TimeUnit;
 final class FrpClient {
     private static final String ASSET_ARM64 = "bin/frpc-arm64-v8a";
     private static final String FALLBACK_DNS = "114.114.114.114";
+    private static final String[] FALLBACK_DNS_SERVERS = {
+            "114.114.114.114",
+            "223.5.5.5",
+            "8.8.8.8",
+            "1.1.1.1"
+    };
     private static final long NETWORK_REFRESH_DELAY_MS = 1_000L;
+    private static final long PUBLIC_FAILURE_RECOVERY_MIN_MS = 60_000L;
     private static final int LOCAL_PORT = 8787;
     private static final String LOG_TAG = "frp";
 
@@ -54,12 +61,14 @@ final class FrpClient {
     private String activeSignature = "";
     private String activeProxyName = "";
     private String activeDnsServer = "";
+    private String forcedDnsServer = "";
     private String activeServerAddr = "";
     private int activeServerPort;
     private int activeRemotePort;
     private long lastStartAt;
     private long lastConnectedAt;
     private long lastExitAt;
+    private long lastPublicFailureRecoverAt;
     private int lastExitCode = Integer.MIN_VALUE;
     private String lastError = "";
     private String lastInfo = "未启动";
@@ -78,8 +87,14 @@ final class FrpClient {
     static synchronized void restart(Context context, String reason) {
         if (instance == null) instance = new FrpClient(context);
         AppLog.add(context, LOG_TAG, "请求重启 frp：" + safeText(reason));
+        instance.forcedDnsServer = "";
         instance.stopInternal("准备重启");
         instance.ensureRunningInternal();
+    }
+
+    static synchronized void recoverFromPublicFailure(Context context, String error) {
+        if (instance == null) instance = new FrpClient(context);
+        instance.recoverFromPublicFailureInternal(error);
     }
 
     static synchronized void stop(Context context, String reason) {
@@ -279,7 +294,7 @@ final class FrpClient {
         if (serverPort <= 0) return RuntimeConfig.disabled(publicUrl, "frp 服务端口无效");
         if (remotePort <= 0) return RuntimeConfig.disabled(publicUrl, "frp 远端端口无效");
         String resolvedPublicUrl = publicUrl.isEmpty() ? "http://" + serverAddr + ":" + remotePort : publicUrl;
-        String dnsServer = pickDnsServer();
+        String dnsServer = selectedDnsServer();
         String proxyName = "remote_sms_" + Integer.toHexString(Config.deviceId(context).hashCode()).replace("-", "x");
         String signature = serverAddr + ":" + serverPort + "|" + remotePort + "|" + frp.authToken + "|" + dnsServer;
         return RuntimeConfig.enabled(resolvedPublicUrl, serverAddr, serverPort, remotePort, frp.authToken, dnsServer, proxyName, signature);
@@ -394,6 +409,9 @@ final class FrpClient {
             return;
         }
 
+        if (becameAvailable) {
+            forcedDnsServer = "";
+        }
         RuntimeConfig runtime = desiredConfig();
         if (!runtime.enabled) return;
         boolean processAlive = FrpRuntimeSupport.isProcessAlive(process);
@@ -407,6 +425,27 @@ final class FrpClient {
 
         AppLog.add(context, LOG_TAG, reason + "，刷新 frp 域名解析");
         if (processAlive) stopInternal("网络或 DNS 已变化");
+        ensureRunningInternal();
+    }
+
+    private synchronized void recoverFromPublicFailureInternal(String error) {
+        long now = System.currentTimeMillis();
+        if (now - lastPublicFailureRecoverAt < PUBLIC_FAILURE_RECOVERY_MIN_MS) return;
+        RuntimeConfig runtime = desiredConfig();
+        if (!runtime.enabled) return;
+        String nextDns = FrpRuntimeSupport.nextDnsAfterFailure(
+                runtime.dnsServer,
+                pickSystemDnsServer(),
+                FALLBACK_DNS_SERVERS
+        );
+        if (nextDns.isEmpty()) return;
+        forcedDnsServer = nextDns;
+        lastPublicFailureRecoverAt = now;
+        AppLog.add(context, LOG_TAG, "公网入口检测失败，切换 frp DNS 为 " + nextDns
+                + " 并重启隧道" + (clean(error).isEmpty() ? "" : "，原因：" + safeText(error)));
+        if (FrpRuntimeSupport.isProcessAlive(process)) {
+            stopInternal("公网健康检查失败，切换 DNS");
+        }
         ensureRunningInternal();
     }
 
@@ -462,7 +501,12 @@ final class FrpClient {
         return "";
     }
 
-    private String pickDnsServer() {
+    private String selectedDnsServer() {
+        String forced = clean(forcedDnsServer);
+        return forced.isEmpty() ? pickSystemDnsServer() : forced;
+    }
+
+    private String pickSystemDnsServer() {
         try {
             ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
             if (manager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

@@ -58,6 +58,46 @@ final class FrpRuntimeSupport {
         return !clean(currentDns).equals(clean(activeDns));
     }
 
+    static String nextDnsAfterFailure(String currentDns, String systemDns, String[] fallbackDnsServers) {
+        String current = clean(currentDns);
+        String system = clean(systemDns);
+        String[] candidates = fallbackDnsServers == null ? new String[0] : fallbackDnsServers;
+        if (current.isEmpty() || current.equals(system)) {
+            for (String candidate : candidates) {
+                String dns = clean(candidate);
+                if (!dns.isEmpty() && !dns.equals(current)) return dns;
+            }
+            return "";
+        }
+        for (int i = 0; i < candidates.length; i++) {
+            if (current.equals(clean(candidates[i]))) {
+                for (int next = i + 1; next < candidates.length; next++) {
+                    String dns = clean(candidates[next]);
+                    if (!dns.isEmpty() && !dns.equals(current)) return dns;
+                }
+                return system.equals(current) ? "" : system;
+            }
+        }
+        return system.isEmpty() || system.equals(current) ? "" : system;
+    }
+
+    static boolean isRecoverablePublicCheckError(String error) {
+        String lower = clean(error).toLowerCase(Locale.US);
+        if (lower.isEmpty()) return true;
+        if (lower.startsWith("http 4")) return false;
+        return lower.contains("timeout")
+                || lower.contains("unknownhost")
+                || lower.contains("no such host")
+                || lower.contains("connectexception")
+                || lower.contains("failed to connect")
+                || lower.contains("connection refused")
+                || lower.contains("connection reset")
+                || lower.contains("network is unreachable")
+                || lower.contains("no route to host")
+                || lower.contains("ssl")
+                || !lower.startsWith("http ");
+    }
+
     static boolean isProcessAlive(Process process) {
         if (process == null) return false;
         try {

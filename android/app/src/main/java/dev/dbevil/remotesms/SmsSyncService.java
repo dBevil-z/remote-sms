@@ -9,15 +9,19 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Telephony;
 import android.util.Log;
 
@@ -33,9 +37,10 @@ public class SmsSyncService extends Service {
     private static final String CHANNEL_ID = "remote_sms_sync";
     private static final int NOTIFICATION_ID = 8601;
     private static final long POLL_INTERVAL_MS = 10 * 60_000;
-    private static final long WATCHDOG_INTERVAL_MS = 30 * 60_000;
-    private static final long FRP_CHECK_INTERVAL_MS = 15 * 60_000;
+    private static final long WATCHDOG_INTERVAL_MS = 10 * 60_000;
+    private static final long FRP_CHECK_INTERVAL_MS = 5 * 60_000;
     private static final long WATCHDOG_STUCK_MS = 2 * 60_000;
+    private static final String KEY_LOW_BATTERY_ALERT_ACTIVE = "low_battery_alert_active";
     static final String ACTION_WATCHDOG = "dev.dbevil.remotesms.WATCHDOG";
     static final String ACTION_SMS_RECEIVED_CHECK = "dev.dbevil.remotesms.SMS_RECEIVED_CHECK";
     static final String ACTION_FORCE_WATCHDOG = "dev.dbevil.remotesms.FORCE_WATCHDOG";
@@ -60,6 +65,8 @@ public class SmsSyncService extends Service {
     private Boolean lastFrpOk;
     private boolean frpMissingLogged;
     private long lastFrpCheckAt;
+    private PowerManager.WakeLock serviceWakeLock;
+    private WifiManager.WifiLock wifiLock;
 
     private final Runnable poll = new Runnable() {
         @Override
@@ -126,6 +133,7 @@ public class SmsSyncService extends Service {
         serviceStartedAt = System.currentTimeMillis();
         AppLog.add(this, "service", "短信服务启动，Web 端口 8787");
         startForeground(NOTIFICATION_ID, notification());
+        acquireKeepAliveLocks();
         handler.post(poll);
     }
 
@@ -153,6 +161,7 @@ public class SmsSyncService extends Service {
     public void onDestroy() {
         handler.removeCallbacks(poll);
         scheduleWatchdog(this);
+        releaseKeepAliveLocks();
         AppLog.add(this, "service", "短信服务销毁，等待系统自动拉起");
         watchdogExecutor.shutdownNow();
         super.onDestroy();
@@ -221,6 +230,8 @@ public class SmsSyncService extends Service {
         FrpClient.ensureRunning(this);
         lastWatchdogAt = System.currentTimeMillis();
         lastWatchdogImmediate = immediate;
+        EmailForwarder.drainPending(this);
+        checkBatteryAlert();
         boolean networkOk = isNetworkConnected();
         networkConnectedState = networkOk;
         if (lastNetworkOk == null || lastNetworkOk != networkOk) {
@@ -269,6 +280,9 @@ public class SmsSyncService extends Service {
         publicReachable = ok;
         publicError = ok ? "" : result.error;
         if (ok) lastPublicOkAt = lastPublicCheckAt;
+        if (!ok && FrpRuntimeSupport.isRecoverablePublicCheckError(result.error)) {
+            FrpClient.recoverFromPublicFailure(this, result.error);
+        }
         if (lastFrpOk == null || lastFrpOk != ok) {
             AppLog.add(this, "frp", ok
                     ? "公网入口可访问 " + safeUrl(frp.publicUrl)
@@ -286,6 +300,59 @@ public class SmsSyncService extends Service {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private void checkBatteryAlert() {
+        BatterySnapshot battery = BatterySnapshot.read(this);
+        if (battery.level < 0) return;
+        boolean alertActive = Config.prefs(this).getBoolean(KEY_LOW_BATTERY_ALERT_ACTIVE, false);
+        if (EmailRetryPolicy.shouldSendLowBatteryAlert(battery.level, battery.charging, alertActive)) {
+            Config.prefs(this).edit().putBoolean(KEY_LOW_BATTERY_ALERT_ACTIVE, true).apply();
+            AppLog.add(this, "battery", "电量低于 20%，已加入邮件提醒队列 level=" + battery.level);
+            EmailForwarder.forwardLowBattery(this, battery.level, battery.charging);
+        } else if (alertActive && EmailRetryPolicy.shouldResetLowBatteryAlert(battery.level, battery.charging)) {
+            Config.prefs(this).edit().putBoolean(KEY_LOW_BATTERY_ALERT_ACTIVE, false).apply();
+            AppLog.add(this, "battery", "低电量提醒状态已重置 level=" + battery.level
+                    + " charging=" + battery.charging);
+        }
+    }
+
+    private void acquireKeepAliveLocks() {
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+            if (powerManager != null && serviceWakeLock == null) {
+                serviceWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RemoteSms:service");
+                serviceWakeLock.setReferenceCounted(false);
+                serviceWakeLock.acquire();
+                AppLog.add(this, "service", "已启用锁屏保活唤醒锁");
+            }
+        } catch (Exception error) {
+            AppLog.add(this, "service", "启用唤醒锁失败：" + error);
+        }
+        try {
+            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifiManager != null && wifiLock == null) {
+                wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "RemoteSms:wifi");
+                wifiLock.setReferenceCounted(false);
+                wifiLock.acquire();
+                AppLog.add(this, "service", "已启用 WiFi 保活锁");
+            }
+        } catch (Exception error) {
+            AppLog.add(this, "service", "启用 WiFi 保活锁失败：" + error);
+        }
+    }
+
+    private void releaseKeepAliveLocks() {
+        try {
+            if (serviceWakeLock != null && serviceWakeLock.isHeld()) serviceWakeLock.release();
+        } catch (Exception ignored) {
+        }
+        serviceWakeLock = null;
+        try {
+            if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+        } catch (Exception ignored) {
+        }
+        wifiLock = null;
     }
 
     static JSONObject stateSnapshot() throws Exception {
@@ -426,6 +493,27 @@ public class SmsSyncService extends Service {
 
         static CheckResult fail(String error) {
             return new CheckResult(false, error);
+        }
+    }
+
+    private static final class BatterySnapshot {
+        final int level;
+        final boolean charging;
+
+        private BatterySnapshot(int level, boolean charging) {
+            this.level = level;
+            this.charging = charging;
+        }
+
+        static BatterySnapshot read(Context context) {
+            Intent battery = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            int rawLevel = battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            int status = battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            int percent = rawLevel >= 0 && scale > 0 ? Math.round(rawLevel * 100f / scale) : -1;
+            boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING
+                    || status == BatteryManager.BATTERY_STATUS_FULL;
+            return new BatterySnapshot(percent, charging);
         }
     }
 }

@@ -57,6 +57,30 @@ public class FrpRuntimeSupportTest {
     }
 
     @Test
+    public void publicHealthFailureRotatesDnsWithoutCachingPublicIp() {
+        String[] fallbacks = {"114.114.114.114", "223.5.5.5", "8.8.8.8", "1.1.1.1"};
+
+        assertEquals("114.114.114.114", FrpRuntimeSupport.nextDnsAfterFailure(
+                "192.168.1.1", "192.168.1.1", fallbacks
+        ));
+        assertEquals("223.5.5.5", FrpRuntimeSupport.nextDnsAfterFailure(
+                "114.114.114.114", "192.168.1.1", fallbacks
+        ));
+        assertEquals("192.168.1.1", FrpRuntimeSupport.nextDnsAfterFailure(
+                "1.1.1.1", "192.168.1.1", fallbacks
+        ));
+    }
+
+    @Test
+    public void onlyRecoverablePublicHealthFailuresRefreshFrp() {
+        assertTrue(FrpRuntimeSupport.isRecoverablePublicCheckError("SocketTimeoutException: timeout"));
+        assertTrue(FrpRuntimeSupport.isRecoverablePublicCheckError("UnknownHostException: frp.example.test"));
+        assertTrue(FrpRuntimeSupport.isRecoverablePublicCheckError("ConnectException: failed to connect"));
+        assertFalse(FrpRuntimeSupport.isRecoverablePublicCheckError("HTTP 401"));
+        assertFalse(FrpRuntimeSupport.isRecoverablePublicCheckError("HTTP 404"));
+    }
+
+    @Test
     public void tomlEscapesSecretsAndNames() {
         String text = FrpRuntimeSupport.toml(
                 "host",

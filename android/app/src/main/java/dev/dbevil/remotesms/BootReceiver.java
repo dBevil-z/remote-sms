@@ -10,10 +10,16 @@ public class BootReceiver extends BroadcastReceiver {
         String action = intent == null ? "" : intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
-                || SmsSyncService.ACTION_WATCHDOG.equals(action)) {
+                || Intent.ACTION_BATTERY_LOW.equals(action)
+                || Intent.ACTION_POWER_CONNECTED.equals(action)
+                || SmsSyncService.ACTION_WATCHDOG.equals(action)
+                || EmailForwarder.ACTION_EMAIL_RETRY.equals(action)) {
             AppLog.add(context, "watchdog", "收到唤醒广播：" + action);
             EmbeddedHttpServer.start(context.getApplicationContext());
             SmsSyncService.start(context.getApplicationContext());
+            if (EmailForwarder.ACTION_EMAIL_RETRY.equals(action)) {
+                EmailForwarder.drainPending(context.getApplicationContext());
+            }
         }
     }
 }

@@ -111,7 +111,10 @@ public class MainActivity extends Activity {
         root.addView(defaultSms, matchWrap(0, 0, 0, 10));
 
         Button bridge = actionButton("检查发送桥", false);
-        bridge.setOnClickListener(v -> refreshBridgeStatus());
+        bridge.setOnClickListener(v -> {
+            refreshBridgeStatus();
+            showBridgeHelpDialog();
+        });
         root.addView(bridge, matchWrap(0, 0, 0, 10));
 
         Button frpRestart = actionButton("重启 frp 隧道", false);
@@ -475,7 +478,9 @@ public class MainActivity extends Activity {
                     Manifest.permission.READ_SMS,
                     Manifest.permission.RECEIVE_SMS,
                     Manifest.permission.SEND_SMS,
-                    Manifest.permission.READ_PHONE_STATE
+                    Manifest.permission.READ_PHONE_STATE,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
             }, REQUEST_SMS_PERMISSIONS);
         }
     }
@@ -632,6 +637,17 @@ public class MainActivity extends Activity {
         if (!SmsSendService.requiresShellBridge()) return "不需要";
         if (!bridgeChecked) return "正在检查";
         return bridgeAvailable ? "已连接，可以发送短信" : "未启动，发送短信会失败";
+    }
+
+    private void showBridgeHelpDialog() {
+        String message = SmsSendService.requiresShellBridge()
+                ? bridgeStatusText() + "\n\n" + SmsSendService.shellBridgeStartHint()
+                : "当前机型不需要发送桥，App 会直接使用系统 SmsManager 发送。";
+        new AlertDialog.Builder(this)
+                .setTitle("发送桥状态")
+                .setMessage(message)
+                .setPositiveButton("知道了", null)
+                .show();
     }
 
     private String frpTunnelStatusText() {

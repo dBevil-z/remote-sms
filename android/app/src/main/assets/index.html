@@ -640,7 +640,7 @@
         metric("短信", String(sms.storedMessages || 0), "本机记录", Math.min(100, (Number(sms.storedMessages || 0) / 500) * 100)) +
         '<article class="metric facts"><div class="compactFacts">' +
         chip("设备", [(dev.manufacturer || ""), dev.model].filter(Boolean).join(" ")) + chip("系统", "Android " + (dev.android || "")) +
-        chip("运行", uptime(dev.uptimeMs)) + chip("网络", (net.connected ? "已连 " : "未连 ") + (net.type || "")) +
+        chip("运行", uptime(dev.uptimeMs)) + chip("网络", (net.connected ? "已连 " : "未连 ") + (net.ssid ? ("WIFI " + net.ssid) : (net.type || ""))) +
         chip("桥", svc.sendBridge ? "已连接" : (svc.requiresSendBridge ? "未启动" : "不需要")) +
         chip("公网", health.publicReachable === true ? "可访问" : (health.publicReachable === false ? "不可达" : "待检测")) +
         chip("隧道", tunnel.enabled ? (tunnel.running ? "运行中" : "未运行") : "未配置") +

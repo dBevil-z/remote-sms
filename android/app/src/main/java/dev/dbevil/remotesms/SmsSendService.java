@@ -263,6 +263,11 @@ final class SmsSendService {
         }
     }
 
+    static String shellBridgeStartHint() {
+        return "发送桥是 shell 侧服务，App 无法自行获得 shell 权限启动。请通过 USB 调试执行："
+                + "adb shell /data/local/tmp/sms-bridge/start-phone-services.sh";
+    }
+
     static boolean requiresShellBridge() {
         String brand = String.valueOf(Build.BRAND).toLowerCase();
         String manufacturer = String.valueOf(Build.MANUFACTURER).toLowerCase();
